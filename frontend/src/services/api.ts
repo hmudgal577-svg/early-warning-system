@@ -19,9 +19,13 @@ const setDemoMode = (val: boolean) => {
   window.dispatchEvent(new CustomEvent('ews-demo-mode', { detail: val }));
 };
 
+const RENDER_BASE_URL = (typeof window !== 'undefined' && window.location.hostname !== 'localhost')
+  ? 'https://ews-ai-engine.onrender.com'
+  : 'http://localhost:8080';
+
 const api = axios.create({
-  baseURL: 'http://localhost:8080',
-  timeout: 3000, // 3s timeout — fail fast, switch to demo
+  baseURL: (import.meta as any).env?.VITE_API_BASE_URL || RENDER_BASE_URL,
+  timeout: 5000,
 });
 
 api.interceptors.request.use((config) => {
