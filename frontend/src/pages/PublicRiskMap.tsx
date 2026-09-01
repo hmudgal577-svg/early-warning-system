@@ -27,7 +27,7 @@ const PublicRiskMap = () => {
       </div>
 
       <MapContainer center={[25.5, 92.0]} zoom={7} style={{ height: '100%', width: '100%' }}>
-        <TileLayer url="https://{s}.basemaps.cartocdn.com/dark_all/{z}/{x}/{y}{r}.png" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors &copy; <a href="https://carto.com/">CARTO</a>' maxZoom={19} />
+        <TileLayer url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png" attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors | SIH 2026 EWS' maxZoom={19} />
         {regions.map(r => (
           <React.Fragment key={r.regionId}>
             <Circle center={[r.centroidLat, r.centroidLng]} radius={5000} pathOptions={{ fillColor: 'var(--color-risk-' + r.severity.toLowerCase() + ')', fillOpacity: 0.3, color: 'transparent' }} />
