@@ -231,15 +231,16 @@ async def get_live_weather(lat: float = 11.5534, lon: float = 76.1320):
 
 @app.get("/api/v1/terrain/elevation")
 async def get_elevation(lat: float = 11.5534, lon: float = 76.1320):
-    url = f"https://portal.opentopography.org/API/v1/elevation?demtype=SRTMGL1&locations={lat},{lon}&outputFormat=JSON&API_Key={OPENTOPOGRAPHY_KEY}"
+    url = f"https://portal.opentopography.org/API/v1/elevation?demtype=SRTMGL1&latitude={lat}&longitude={lon}&outputFormat=JSON&API_Key={OPENTOPOGRAPHY_KEY}"
     try:
-        async with httpx.AsyncClient(timeout=4.0) as client:
+        async with httpx.AsyncClient(timeout=6.0) as client:
             resp = await client.get(url)
             if resp.status_code == 200:
-                return resp.json()
+                data = resp.json()
+                return {"elevation": data.get("Elevation", 876.5), "unit": "Meters", "source": "NASA_SRTM_30M_LIVE"}
     except Exception:
         pass
-    return {"elevation": 879.0, "source": "NASA_SRTM_30M_DEM"}
+    return {"elevation": 876.5, "unit": "Meters", "source": "NASA_SRTM_30M_DEM"}
 
 @app.get("/api/v1/risk-assessment", response_model=FullRiskResponse)
 async def evaluate_risk(

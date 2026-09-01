@@ -30,8 +30,8 @@ public class TerrainElevationService {
 
     public Map<String, Object> getElevation(double lat, double lon) {
         String url = String.format(
-                "%s?longitude=%.4f&latitude=%.4f&dataset=SRTM_GL1&API_Key=%s",
-                BASE_URL, lon, lat, apiKey
+                "%s?demtype=SRTMGL1&latitude=%.4f&longitude=%.4f&outputFormat=JSON&API_Key=%s",
+                BASE_URL, lat, lon, apiKey
         );
 
         try {
