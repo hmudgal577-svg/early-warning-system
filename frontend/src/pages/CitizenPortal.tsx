@@ -4,24 +4,32 @@ import { fetchRiskAssessment } from '../services/api';
 import { sendRiskAlert } from '../services/notificationService';
 import { useAlertSound } from '../hooks/useAlertSound';
 import { usePermissions } from '../hooks/usePermissions';
+import { useVoiceAssistant } from '../hooks/useVoiceAssistant';
 import { AIPriorityPanel } from '../components/AIPriorityPanel';
+import { Terrain3DVisualizer } from '../components/map/Terrain3DVisualizer';
+import { ShelterResourcePanel } from '../components/panels/ShelterResourcePanel';
+import { OfflineSosMesh } from '../components/panels/OfflineSosMesh';
 import { RiskAssessmentResponse } from '../types';
 
 export const CitizenPortal: React.FC = () => {
   const navigate = useNavigate();
+  const [lang, setLang] = useState<'en' | 'hi' | 'as'>('en');
   const { playCriticalSiren, playWarningBeep, stopSiren, isPlaying } = useAlertSound();
   const { userLocation, notification } = usePermissions();
-  const [lang, setLang] = useState<'en' | 'hi' | 'as'>('en');
+  const { speakAlert, isSpeaking, stopSpeaking } = useVoiceAssistant(lang);
+
   const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [loading, setLoading] = useState<boolean>(true);
   const [data, setData] = useState<RiskAssessmentResponse | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | 'ai_agent'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | '3d_terrain' | 'shelters' | 'ai_agent' | 'offline_sos'>('overview');
+  
   const [selectedZone, setSelectedZone] = useState({
     name: 'Meppadi, Wayanad (Testbed)',
     lat: 11.5534,
     lon: 76.1320,
     slope: 38.5
   });
+
   const lastAlertLevel = useRef<string | null>(null);
   const notificationSent = useRef<Set<string>>(new Set());
 
@@ -57,6 +65,7 @@ export const CitizenPortal: React.FC = () => {
         // Trigger sound on RED or AMBER
         if (level === 'RED' && lastAlertLevel.current !== 'RED') {
           playCriticalSiren();
+          speakAlert(selectedZone.name, 'RED', res.assessment.action_protocol);
         } else if (level === 'AMBER' && lastAlertLevel.current !== 'AMBER') {
           playWarningBeep();
         } else if (level === 'GREEN') {
@@ -64,7 +73,7 @@ export const CitizenPortal: React.FC = () => {
         }
         lastAlertLevel.current = level;
 
-        // Send push notification (only once per alert key per session)
+        // Send push notification
         if (!notificationSent.current.has(alertKey) && notification === 'granted') {
           await sendRiskAlert({
             zone: selectedZone.name,
@@ -96,12 +105,17 @@ export const CitizenPortal: React.FC = () => {
       safeRoute: 'Guaranteed Safe Evacuation Route',
       estTime: 'Est. Evacuation Time',
       sirenOn: '🔇 Mute Siren',
-      sirenOff: '🔊 Test Emergency Siren',
+      sirenOff: '🔊 Emergency Siren',
+      voiceBtn: '🗣️ Speak Voice Alert',
+      stopVoiceBtn: '⏹️ Stop Voice',
       survivalGuide: 'Emergency Survival & Evacuation Protocols',
-      reportBtn: '📋 Report Disaster / Road Blockage',
-      cmdMapBtn: '🛰️ Open GIS Command Map',
-      tabOverview: 'Overview',
+      reportBtn: '📸 AI Scan & Report Hazard',
+      cmdMapBtn: '🛰️ GIS Command Map',
+      tabOverview: '📊 Overview',
+      tab3d: '⛰️ 3D Terrain & Runoff',
+      tabShelters: '🏥 Relief Camps',
       tabAgent: '🤖 AI Priority Agent',
+      tabSos: '📴 Offline SOS Mesh'
     },
     hi: {
       title: 'नागरिक सुरक्षा एवं आपदा पूर्व चेतावनी',
@@ -119,12 +133,17 @@ export const CitizenPortal: React.FC = () => {
       safeRoute: 'सुरक्षित वैकल्पिक निकासी मार्ग',
       estTime: 'अनुमानित निकासी समय',
       sirenOn: '🔇 सायरन बंद करें',
-      sirenOff: '🔊 आपातकालीन सायरन टेस्ट',
+      sirenOff: '🔊 सायरन टेस्ट',
+      voiceBtn: '🗣️ आवाज में सुनें',
+      stopVoiceBtn: '⏹️ आवाज रोकें',
       survivalGuide: 'आपातकालीन सुरक्षा एवं बचाव नियम',
-      reportBtn: '📋 आपदा या सड़क रुकावट रिपोर्ट करें',
+      reportBtn: '📸 एआई स्कैन व रिपोर्ट करें',
       cmdMapBtn: '🛰️ जीआईएस मैप खोलें',
-      tabOverview: 'अवलोकन',
+      tabOverview: '📊 अवलोकन',
+      tab3d: '⛰️ 3D पहाड़ी सिमुलेशन',
+      tabShelters: '🏥 राहत शिविर',
       tabAgent: '🤖 एआई प्राथमिकता एजेंट',
+      tabSos: '📴 ऑफलाइन एसओएस मेश'
     },
     as: {
       title: 'নাগৰিক সুৰক্ষা আৰু দুৰ্যোগ সতৰ্কবাৰ্তা',
@@ -142,12 +161,17 @@ export const CitizenPortal: React.FC = () => {
       safeRoute: 'সুৰক্ষিত বিকল্প পথ',
       estTime: 'আনুমানিক নিষ্কাষণ সময়',
       sirenOn: '🔇 চাইৰেন বন্ধ কৰক',
-      sirenOff: '🔊 চাইৰেন পৰীক্ষা কৰক',
+      sirenOff: '🔊 চাইৰেন পৰীক্ষা',
+      voiceBtn: '🗣️ ভইচ সতৰ্কবাৰ্তা',
+      stopVoiceBtn: '⏹️ ভইচ বন্ধ কৰক',
       survivalGuide: 'জৰুৰীকালীন সুৰক্ষা নিৰ্দেশনা',
-      reportBtn: '📋 দুৰ্যোগৰ তথ্য প্ৰেৰণ কৰক',
-      cmdMapBtn: '🛰️ জিআইএছ মেপ খোলক',
-      tabOverview: 'অৱলোকন',
-      tabAgent: '🤖 এআই অগ্ৰাধিকাৰ এজেন্ট',
+      reportBtn: '📸 এআই ফটো ৰিপোৰ্ট',
+      cmdMapBtn: '🛰️ জিআইএছ মেপ',
+      tabOverview: '📊 অৱলোকন',
+      tab3d: '⛰️ ৩ডি পাহাৰ',
+      tabShelters: '🏥 আশ্ৰয় শিবিৰ',
+      tabAgent: '🤖 এআই অগ্ৰাধিকাৰ',
+      tabSos: '📴 অফলাইন এছঅ’এছ'
     }
   }[lang];
 
@@ -186,7 +210,7 @@ export const CitizenPortal: React.FC = () => {
         borderBottom: `1px solid ${brd}`,
         padding: '14px 24px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        position: 'sticky', top: 0, zIndex: 50
+        position: 'sticky', top: 0, zIndex: 50, flexWrap: 'wrap', gap: '10px'
       }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
           <div style={{
@@ -195,14 +219,27 @@ export const CitizenPortal: React.FC = () => {
             display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: '20px'
           }}>🛰️</div>
           <div>
-            <div style={{ fontWeight: 800, fontSize: '1.05rem', letterSpacing: '-0.02em' }}>EWS-NER · Citizen</div>
+            <div style={{ fontWeight: 800, fontSize: '1.05rem', letterSpacing: '-0.02em' }}>EWS-NER · Citizen Safety</div>
             <div style={{ fontSize: '0.72rem', color: muted }}>
-              {userLocation ? `📍 ${userLocation.detectedZone}` : 'National Early Warning System'}
+              {userLocation ? `📍 ${userLocation.detectedZone}` : 'National Early Warning Network'}
             </div>
           </div>
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          {/* Voice Assistant Button */}
+          <button
+            onClick={() => isSpeaking ? stopSpeaking() : speakAlert(selectedZone.name, data?.assessment.level || 'GREEN', data?.assessment.action_protocol || '')}
+            style={{
+              padding: '6px 12px', borderRadius: '8px', border: '1px solid #3b82f640',
+              background: isSpeaking ? '#3b82f6' : 'rgba(59,130,246,0.15)',
+              color: isSpeaking ? '#fff' : '#60a5fa',
+              fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer'
+            }}
+          >
+            {isSpeaking ? t.stopVoiceBtn : t.voiceBtn}
+          </button>
+
           {/* Siren toggle */}
           <button
             onClick={() => isPlaying ? stopSiren() : playCriticalSiren()}
@@ -229,13 +266,13 @@ export const CitizenPortal: React.FC = () => {
             ))}
           </div>
 
-          {/* Theme */}
-          <button onClick={() => setTheme(t => t === 'dark' ? 'light' : 'dark')}
+          {/* Theme toggle */}
+          <button onClick={() => setTheme(th => th === 'dark' ? 'light' : 'dark')}
             style={{ background: theme === 'dark' ? '#1e293b' : '#e2e8f0', border: 'none', borderRadius: '20px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.85rem' }}>
             {theme === 'dark' ? '🌙' : '☀️'}
           </button>
 
-          {/* Officer Login */}
+          {/* Officer Portal */}
           <button onClick={() => navigate('/login')}
             style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', padding: '7px 14px', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer' }}>
             🔒 Officer
@@ -243,7 +280,7 @@ export const CitizenPortal: React.FC = () => {
         </div>
       </header>
 
-      {/* ── Main ── */}
+      {/* ── Main Container ── */}
       <main style={{ flex: 1, maxWidth: '1100px', width: '100%', margin: '0 auto', padding: '24px 16px' }}>
 
         {/* Hero */}
@@ -261,21 +298,24 @@ export const CitizenPortal: React.FC = () => {
           <p style={{ color: muted, fontSize: '0.92rem', margin: 0 }}>{t.subtitle}</p>
         </div>
 
-        {/* Tabs */}
-        <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: `1px solid ${brd}`, paddingBottom: '0' }}>
+        {/* Navigation Tabs (5 Features) */}
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: `1px solid ${brd}`, overflowX: 'auto', paddingBottom: '2px' }}>
           {[
             { id: 'overview', label: t.tabOverview },
-            { id: 'ai_agent', label: t.tabAgent }
+            { id: '3d_terrain', label: t.tab3d },
+            { id: 'shelters', label: t.tabShelters },
+            { id: 'ai_agent', label: t.tabAgent },
+            { id: 'offline_sos', label: t.tabSos }
           ].map(tab => (
             <button
               key={tab.id}
               onClick={() => setActiveTab(tab.id as any)}
               style={{
-                padding: '10px 20px', border: 'none', cursor: 'pointer',
-                background: 'transparent', fontWeight: 700, fontSize: '0.88rem',
+                padding: '10px 16px', border: 'none', cursor: 'pointer',
+                background: 'transparent', fontWeight: 700, fontSize: '0.86rem',
                 color: activeTab === tab.id ? '#3b82f6' : muted,
                 borderBottom: activeTab === tab.id ? '2px solid #3b82f6' : '2px solid transparent',
-                transition: 'all 0.15s'
+                whiteSpace: 'nowrap', transition: 'all 0.15s'
               }}
             >
               {tab.label}
@@ -283,6 +323,7 @@ export const CitizenPortal: React.FC = () => {
           ))}
         </div>
 
+        {/* Tab 1: Overview */}
         {activeTab === 'overview' && (
           <>
             {/* Zone Selector */}
@@ -306,7 +347,7 @@ export const CitizenPortal: React.FC = () => {
                   {ZONES.map(z => <option key={z.name} value={z.name}>{z.name}</option>)}
                 </select>
               </div>
-              <div style={{ display: 'flex', gap: '10px' }}>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
                 <button onClick={() => navigate('/sih-dashboard')}
                   style={{ background: 'linear-gradient(135deg, #0284c7, #2563eb)', color: '#fff', border: 'none', borderRadius: '8px', padding: '10px 18px', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer' }}>
                   {t.cmdMapBtn}
@@ -354,7 +395,7 @@ export const CitizenPortal: React.FC = () => {
                 { icon: '🌧️', label: t.rain24, value: `${data?.weather.rain_24h_mm ?? 142.0} mm`, sub: 'Open-Meteo & OpenWeather', color: (data?.weather.rain_24h_mm ?? 0) > 100 ? '#ef4444' : '#38bdf8' },
                 { icon: '📊', label: t.rain72, value: `${data?.weather.rain_72h_mm ?? 285.0} mm`, sub: '3-Day Antecedent Rain', color: '#f8fafc' },
                 { icon: '🌱', label: t.soil, value: `${data?.weather.soil_moisture ?? 0.52} m³/m³`, sub: 'Topsoil 0-1cm Layer', color: '#f8fafc' },
-                { icon: '🛰️', label: t.elevation, value: '879.0 m', sub: 'NASA SRTM 30m DEM', color: '#38bdf8' },
+                { icon: '🛰️', label: t.elevation, value: '876.5 m', sub: 'NASA SRTM 30m DEM', color: '#38bdf8' },
               ].map(({ icon, label, value, sub, color }) => (
                 <div key={label} style={{ background: card, border: `1px solid ${brd}`, borderRadius: '12px', padding: '16px' }}>
                   <div style={{ fontSize: '0.75rem', color: muted, fontWeight: 600 }}>{icon} {label}</div>
@@ -396,8 +437,28 @@ export const CitizenPortal: React.FC = () => {
           </>
         )}
 
+        {/* Tab 2: 3D Mountain & Runoff Simulator */}
+        {activeTab === '3d_terrain' && (
+          <Terrain3DVisualizer
+            zoneName={selectedZone.name}
+            slope={selectedZone.slope}
+            elevation={876.5}
+          />
+        )}
+
+        {/* Tab 3: Safe Relief Camps */}
+        {activeTab === 'shelters' && (
+          <ShelterResourcePanel selectedZoneName={selectedZone.name} />
+        )}
+
+        {/* Tab 4: AI Priority Agent */}
         {activeTab === 'ai_agent' && (
           <AIPriorityPanel />
+        )}
+
+        {/* Tab 5: Offline SOS Mesh */}
+        {activeTab === 'offline_sos' && (
+          <OfflineSosMesh userLat={selectedZone.lat} userLon={selectedZone.lon} />
         )}
       </main>
 
