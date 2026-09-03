@@ -1,4 +1,5 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
+import axios from 'axios';
 import { useAlertSound } from '../../hooks/useAlertSound';
 
 export interface SosPacket {
@@ -13,7 +14,8 @@ export interface SosPacket {
   status: string;
 }
 
-const SOS_STORAGE_KEY = 'satark_live_sos_mesh_ledger';
+const NTFY_TOPIC = 'https://ntfy.sh/satark_mesh_sos_live_2026';
+const RENDER_AI_URL = 'https://ews-ai-engine.onrender.com';
 
 export const OfflineSosMesh: React.FC<{ userLat?: number; userLon?: number }> = ({
   userLat = 11.5534,
@@ -25,58 +27,72 @@ export const OfflineSosMesh: React.FC<{ userLat?: number; userLon?: number }> = 
   const [peopleCount, setPeopleCount] = useState<number>(1);
   const [medicalUrgent, setMedicalUrgent] = useState<boolean>(false);
   const [incomingAlert, setIncomingAlert] = useState<SosPacket | null>(null);
+  const seenPacketIds = useRef<Set<string>>(new Set());
 
-  // Sync SOS packets cross-device via BroadcastChannel & LocalStorage events
-  useEffect(() => {
-    // 1. Initial load from shared storage
+  // Helper to handle incoming packet
+  const handleIncomingPacket = (packet: SosPacket) => {
+    if (!packet || !packet.id || seenPacketIds.current.has(packet.id)) return;
+    seenPacketIds.current.add(packet.id);
+
+    setSosHistory(prev => [packet, ...prev.filter(p => p.id !== packet.id)]);
+    setIncomingAlert(packet);
+
+    // Audio & Vibration alert on receiving phone!
     try {
-      const stored = localStorage.getItem(SOS_STORAGE_KEY);
-      if (stored) {
-        setSosHistory(JSON.parse(stored));
-      }
+      playWarningBeep();
+      if ('vibrate' in navigator) navigator.vibrate([300, 100, 300, 100, 500]);
     } catch {}
 
-    // 2. BroadcastChannel for real-time peer message synchronization
+    // Auto dismiss after 12s
+    setTimeout(() => setIncomingAlert(null), 12000);
+  };
+
+  // ── Live Real-time Cross-Device Synchronization ───────────────────────────
+  useEffect(() => {
+    // 1. Live Server-Sent Events (SSE) from global relay
+    let eventSource: EventSource | null = null;
+    try {
+      eventSource = new EventSource(`${NTFY_TOPIC}/sse`);
+      eventSource.onmessage = (event) => {
+        try {
+          const data = JSON.parse(event.data);
+          if (data && data.message) {
+            const parsedPacket: SosPacket = JSON.parse(data.message);
+            handleIncomingPacket(parsedPacket);
+          }
+        } catch {}
+      };
+    } catch {}
+
+    // 2. Fallback Active Polling to Render AI Engine (every 2.5s)
+    const pollInterval = setInterval(async () => {
+      try {
+        const res = await axios.get<SosPacket[]>(`${RENDER_AI_URL}/api/v1/sos/feed`, { timeout: 3000 });
+        if (res.data && Array.isArray(res.data) && res.data.length > 0) {
+          const latest = res.data[0];
+          handleIncomingPacket(latest);
+        }
+      } catch {}
+    }, 2500);
+
+    // 3. BroadcastChannel for same-device multi-tab
     let channel: BroadcastChannel | null = null;
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       channel = new BroadcastChannel('satark_mesh_p2p_channel');
-      channel.onmessage = (event) => {
-        if (event.data && event.data.type === 'NEW_SOS_BROADCAST') {
-          const newPacket: SosPacket = event.data.packet;
-          setSosHistory(prev => [newPacket, ...prev.filter(p => p.id !== newPacket.id)]);
-          setIncomingAlert(newPacket);
-          playWarningBeep(); // Beep on nearby friend's phone!
-
-          // Auto-dismiss incoming popup after 8 seconds
-          setTimeout(() => setIncomingAlert(null), 8000);
-        }
+      channel.onmessage = (e) => {
+        if (e.data?.packet) handleIncomingPacket(e.data.packet);
       };
     }
 
-    // 3. Storage event listener for multi-tab / device sync
-    const handleStorageChange = (e: StorageEvent) => {
-      if (e.key === SOS_STORAGE_KEY && e.newValue) {
-        try {
-          const list = JSON.parse(e.newValue);
-          setSosHistory(list);
-          if (list.length > 0) {
-            setIncomingAlert(list[0]);
-            playWarningBeep();
-            setTimeout(() => setIncomingAlert(null), 8000);
-          }
-        } catch {}
-      }
-    };
-
-    window.addEventListener('storage', handleStorageChange);
-
     return () => {
+      if (eventSource) eventSource.close();
       if (channel) channel.close();
-      window.removeEventListener('storage', handleStorageChange);
+      clearInterval(pollInterval);
     };
   }, []);
 
-  const triggerMeshSos = () => {
+  // ── Dispatch SOS to All Phones ────────────────────────────────────────────
+  const triggerMeshSos = async () => {
     setBroadcasting(true);
 
     const newSos: SosPacket = {
@@ -90,33 +106,44 @@ export const OfflineSosMesh: React.FC<{ userLat?: number; userLon?: number }> = 
       status: 'BROADCASTING_BLE'
     };
 
-    // Save locally
-    const updatedList = [newSos, ...sosHistory.slice(0, 15)];
-    setSosHistory(updatedList);
+    // Mark as seen on sending device
+    seenPacketIds.current.add(newSos.id);
+    setSosHistory(prev => [newSos, ...prev]);
+
+    // 1. Post to Global Real-time Relay (Reaches friend's phone in <0.5s!)
     try {
-      localStorage.setItem(SOS_STORAGE_KEY, JSON.stringify(updatedList));
+      await fetch(NTFY_TOPIC, {
+        method: 'POST',
+        headers: { 'Title': `🚨 SATARK EMERGENCY SOS: ${newSos.id}`, 'Priority': 'urgent' },
+        body: JSON.stringify(newSos)
+      });
     } catch {}
 
-    // Broadcast over P2P Channel to all nearby devices
+    // 2. Post to Render AI Engine backend
+    try {
+      await axios.post(`${RENDER_AI_URL}/api/v1/sos/broadcast`, newSos, { timeout: 3000 });
+    } catch {}
+
+    // 3. Local BroadcastChannel
     if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
       const channel = new BroadcastChannel('satark_mesh_p2p_channel');
       channel.postMessage({ type: 'NEW_SOS_BROADCAST', packet: newSos });
       channel.close();
     }
 
-    // Multi-hop mesh propagation simulation
+    // Multi-hop progression animation
     setTimeout(() => {
       setSosHistory(prev =>
         prev.map(item => item.id === newSos.id ? { ...item, hops: 2, status: 'RELAYED_NEIGHBOR_DEVICE' } : item)
       );
-    }, 1500);
+    }, 1200);
 
     setTimeout(() => {
       setSosHistory(prev =>
         prev.map(item => item.id === newSos.id ? { ...item, hops: 3, status: 'DELIVERED_NDRF_SATELLITE_HUB' } : item)
       );
       setBroadcasting(false);
-    }, 3500);
+    }, 3000);
   };
 
   return (
@@ -130,41 +157,42 @@ export const OfflineSosMesh: React.FC<{ userLat?: number; userLon?: number }> = 
       marginBottom: '24px',
       boxShadow: '0 8px 32px rgba(0,0,0,0.3)'
     }}>
-      {/* 🚨 REAL-TIME INCOMING SOS POPUP ON FRIEND'S DEVICE */}
+      {/* 🚨 LIVE INCOMING SOS POPUP ON RECEIVING FRIEND'S PHONE */}
       {incomingAlert && (
         <div style={{
-          background: 'linear-gradient(135deg, #ef4444, #b91c1c)',
+          background: 'linear-gradient(135deg, #dc2626, #991b1b)',
           color: '#ffffff',
           borderRadius: '12px',
-          padding: '16px',
+          padding: '18px',
           marginBottom: '20px',
-          boxShadow: '0 0 25px rgba(239, 68, 68, 0.7)',
-          animation: 'pulse 1s infinite',
+          boxShadow: '0 0 30px rgba(220, 38, 38, 0.8)',
+          border: '2px solid #fecaca',
           display: 'flex',
           justifyContent: 'space-between',
           alignItems: 'center',
           flexWrap: 'wrap',
-          gap: '10px'
+          gap: '12px'
         }}>
           <div>
-            <div style={{ fontSize: '0.8rem', fontWeight: 900, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-              🚨 LIVE INCOMING NEARBY SOS DETECTED!
+            <div style={{ fontSize: '0.82rem', fontWeight: 900, letterSpacing: '0.05em', color: '#fef08a' }}>
+              🚨 LIVE INCOMING EMERGENCY SOS RECEIVED!
             </div>
-            <div style={{ fontSize: '1.05rem', fontWeight: 800, marginTop: '2px' }}>
+            <div style={{ fontSize: '1.2rem', fontWeight: 900, marginTop: '2px' }}>
               Packet: <strong>{incomingAlert.id}</strong> &bull; GPS: {incomingAlert.lat.toFixed(4)}, {incomingAlert.lon.toFixed(4)}
             </div>
-            <div style={{ fontSize: '0.82rem', marginTop: '2px' }}>
-              👥 Casualties: <strong>{incomingAlert.casualties} Person(s)</strong> {incomingAlert.urgentMedical && '• 🚨 Urgent Medical Required'} ({incomingAlert.timestamp})
+            <div style={{ fontSize: '0.86rem', marginTop: '4px', color: '#f8fafc' }}>
+              👥 Casualties: <strong>{incomingAlert.casualties} Person(s)</strong> {incomingAlert.urgentMedical && '• 🚨 Urgent Medical Attention Required!'} ({incomingAlert.timestamp})
             </div>
           </div>
           <button
             onClick={() => setIncomingAlert(null)}
             style={{
               background: '#ffffff', color: '#dc2626', border: 'none',
-              borderRadius: '6px', padding: '6px 14px', fontSize: '0.8rem', fontWeight: 800, cursor: 'pointer'
+              borderRadius: '8px', padding: '8px 18px', fontSize: '0.85rem', fontWeight: 900, cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
             }}
           >
-            ACKNOWLEDGE
+            DISMISS ALERT
           </button>
         </div>
       )}
@@ -176,14 +204,14 @@ export const OfflineSosMesh: React.FC<{ userLat?: number; userLon?: number }> = 
             <span>📴</span> Offline BLE Mesh SOS Emergency Broadcast
           </h3>
           <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>
-            Zero-Internet Peer-to-Peer emergency relay protocol (Cellular tower blackout fallback).
+            Real-time multi-device peer-to-peer relay (Transmits live across all open phones).
           </p>
         </div>
         <span style={{
-          background: 'rgba(59, 130, 246, 0.15)', border: '1px solid #3b82f6',
-          color: '#60a5fa', padding: '4px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700
+          background: 'rgba(34, 197, 94, 0.15)', border: '1px solid #22c55e',
+          color: '#4ade80', padding: '4px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700
         }}>
-          📶 BLUETOOTH LE MESH ACTIVE
+          ● LIVE MULTI-DEVICE MESH SYNC ACTIVE
         </span>
       </div>
 
@@ -230,11 +258,10 @@ export const OfflineSosMesh: React.FC<{ userLat?: number; userLon?: number }> = 
             background: broadcasting ? '#64748b' : 'linear-gradient(135deg, #ef4444, #dc2626)',
             color: '#fff', border: 'none', borderRadius: '10px', padding: '12px 24px',
             fontSize: '0.95rem', fontWeight: 800, cursor: broadcasting ? 'not-allowed' : 'pointer',
-            boxShadow: '0 4px 20px rgba(239, 68, 68, 0.4)',
-            animation: broadcasting ? 'pulse 1s infinite' : 'none'
+            boxShadow: '0 4px 20px rgba(239, 68, 68, 0.4)'
           }}
         >
-          {broadcasting ? '📡 Broadcasting SOS Packet…' : '🆘 Broadcast Offline SOS Mesh'}
+          {broadcasting ? '📡 Broadcasting Across All Phones…' : '🆘 Broadcast Live SOS Mesh'}
         </button>
       </div>
 

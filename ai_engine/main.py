@@ -281,6 +281,33 @@ async def evaluate_risk(
         evacuation_plan=evac_plan
     )
 
+# ── Live Cross-Device SOS Broadcast Relay ────────────────────────────────────
+
+GLOBAL_SOS_FEED: List[dict] = []
+
+class SosBroadcastPacket(BaseModel):
+    id: str
+    lat: float
+    lon: float
+    casualties: int
+    urgentMedical: bool
+    timestamp: str
+    hops: Optional[int] = 1
+    status: Optional[str] = "DELIVERED_MESH"
+
+@app.post("/api/v1/sos/broadcast")
+async def broadcast_sos_packet(packet: SosBroadcastPacket):
+    p_dict = packet.dict()
+    # Prepend to live feed
+    GLOBAL_SOS_FEED.insert(0, p_dict)
+    if len(GLOBAL_SOS_FEED) > 50:
+        GLOBAL_SOS_FEED.pop()
+    return {"status": "SUCCESS", "message": "SOS broadcasted across all devices", "packet": p_dict}
+
+@app.get("/api/v1/sos/feed")
+async def get_sos_feed():
+    return GLOBAL_SOS_FEED
+
 if __name__ == "__main__":
     import uvicorn
     port = int(os.getenv("PORT", 8000))
