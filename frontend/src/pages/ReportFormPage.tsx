@@ -75,29 +75,63 @@ const ReportFormPage = () => {
   };
 
   return (
-    <div style={{ minHeight: '100vh', background: '#0b1329', color: '#f1f5f9', padding: '24px 16px', fontFamily: 'Inter, system-ui, sans-serif' }}>
-      <div style={{ maxWidth: '720px', margin: '0 auto' }}>
+    <div style={{
+      minHeight: '100vh',
+      background: "linear-gradient(180deg, rgba(6, 10, 18, 0.88) 0%, rgba(8, 12, 22, 0.96) 100%), url('/landslide_bg.jpg') center/cover fixed no-repeat",
+      color: '#f8fafc',
+      padding: '24px 16px',
+      fontFamily: 'Inter, system-ui, sans-serif'
+    }}>
+      <div style={{ maxWidth: '760px', margin: '0 auto' }}>
         
         {/* Top Header */}
-        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px' }}>
+        <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '20px', flexWrap: 'wrap', gap: '10px' }}>
           <button
             onClick={() => navigate('/citizen')}
-            style={{ background: '#1e293b', color: '#94a3b8', border: '1px solid #334155', borderRadius: '8px', padding: '8px 14px', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer' }}
+            style={{
+              display: 'flex', alignItems: 'center', gap: '8px',
+              background: 'rgba(15, 23, 42, 0.8)', color: '#cbd5e1',
+              border: '1px solid rgba(255, 255, 255, 0.12)', borderRadius: '8px',
+              padding: '8px 16px', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer',
+              backdropFilter: 'blur(10px)'
+            }}
           >
-            ← Back to Citizen Portal
+            ← Back to SATARK Citizen Portal
           </button>
-          <div style={{ fontSize: '0.8rem', color: isOnline ? '#4ade80' : '#f59e0b', fontWeight: 700 }}>
-            {isOnline ? '🟢 Connected (Instant Sync)' : '🟡 Offline Mode (Queued)'}
+          
+          <div style={{
+            display: 'inline-flex', alignItems: 'center', gap: '6px',
+            background: isOnline ? 'rgba(16, 185, 129, 0.15)' : 'rgba(245, 158, 11, 0.15)',
+            border: `1px solid ${isOnline ? '#10b981' : '#f59e0b'}`,
+            color: isOnline ? '#34d399' : '#fcd34d',
+            padding: '4px 12px', borderRadius: '20px', fontSize: '0.78rem', fontWeight: 700
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: isOnline ? '#10b981' : '#f59e0b' }} />
+            {isOnline ? 'Connected (Instant Sync)' : 'Offline Mode (Queued)'}
           </div>
         </div>
 
-        <div style={{ background: '#0f172a', border: '1px solid #1e293b', borderRadius: '18px', padding: '28px' }}>
-          <h2 style={{ margin: '0 0 6px 0', fontSize: '1.4rem', fontWeight: 900, color: '#f8fafc' }}>
-            📋 Report Landslide / Road Hazard
-          </h2>
-          <p style={{ margin: '0 0 20px 0', fontSize: '0.85rem', color: '#94a3b8' }}>
-            Crowdsourced disaster verification powered by Computer Vision &amp; NDMA CAP protocols.
-          </p>
+        <div style={{
+          background: 'rgba(15, 23, 42, 0.85)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          backdropFilter: 'blur(16px)',
+          WebkitBackdropFilter: 'blur(16px)',
+          borderRadius: '18px', padding: '28px',
+          boxShadow: '0 8px 32px rgba(0,0,0,0.4)'
+        }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: '12px', marginBottom: '8px' }}>
+            <img src="/satark_logo.png" alt="SATARK" style={{ width: '38px', height: '38px', borderRadius: '8px', background: '#fff', padding: '2px' }} />
+            <div>
+              <h2 style={{ margin: 0, fontSize: '1.4rem', fontWeight: 900, color: '#f8fafc' }}>
+                SATARK · Report Landslide / Road Hazard
+              </h2>
+              <div style={{ fontSize: '0.78rem', color: '#94a3b8' }}>
+                Crowdsourced disaster verification powered by Computer Vision &amp; NDMA CAP protocols
+              </div>
+            </div>
+          </div>
+
+          <div style={{ height: '1px', background: 'rgba(255,255,255,0.08)', margin: '16px 0 20px 0' }} />
 
           {/* 1. AI Vision Scanner */}
           <AiVisionScanner onScanComplete={handleAiScanComplete} />
@@ -119,9 +153,9 @@ const ReportFormPage = () => {
               <button
                 onClick={() => isListening ? stopListening() : startListening()}
                 style={{
-                  background: isListening ? '#ef4444' : 'rgba(59, 130, 246, 0.15)',
-                  border: '1px solid #3b82f650', color: isListening ? '#fff' : '#60a5fa',
-                  borderRadius: '6px', padding: '4px 10px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer'
+                  background: isListening ? '#ef4444' : 'rgba(59, 130, 246, 0.2)',
+                  border: '1px solid rgba(59, 130, 246, 0.4)', color: isListening ? '#fff' : '#60a5fa',
+                  borderRadius: '6px', padding: '5px 12px', fontSize: '0.75rem', fontWeight: 700, cursor: 'pointer'
                 }}
               >
                 {isListening ? '🛑 Listening… Click to Stop' : '🎤 Speak / Voice Dictate'}
@@ -133,14 +167,15 @@ const ReportFormPage = () => {
               onChange={e => setDescription(e.target.value)}
               placeholder="Describe road blockage, mudflow severity, or stranded vehicles..."
               style={{
-                width: '100%', padding: '12px', background: '#1e293b', border: '1px solid #334155',
+                width: '100%', padding: '12px', background: 'rgba(10, 15, 26, 0.7)',
+                border: '1px solid rgba(255, 255, 255, 0.12)',
                 borderRadius: '8px', color: '#f8fafc', fontSize: '0.9rem', resize: 'vertical'
               }}
             />
           </div>
 
           {/* 4. GPS Location Status */}
-          <div style={{ background: '#1e293b', padding: '12px 16px', borderRadius: '10px', marginBottom: '24px', fontSize: '0.8rem', color: '#94a3b8' }}>
+          <div style={{ background: 'rgba(10, 15, 26, 0.7)', border: '1px solid rgba(255, 255, 255, 0.08)', padding: '12px 16px', borderRadius: '10px', marginBottom: '24px', fontSize: '0.8rem', color: '#94a3b8' }}>
             📍 GPS Coordinates: <strong style={{ color: '#f8fafc' }}>{coords ? `${coords.lat.toFixed(4)}, ${coords.lng.toFixed(4)}` : 'Auto-detecting GPS (11.5534, 76.1320)...'}</strong>
           </div>
 
@@ -150,10 +185,10 @@ const ReportFormPage = () => {
             disabled={submitting || success}
             style={{
               width: '100%', padding: '14px',
-              background: success ? '#22c55e' : 'linear-gradient(135deg, #16a34a, #15803d)',
+              background: success ? '#10b981' : 'linear-gradient(135deg, #059669, #047857)',
               color: '#fff', border: 'none', borderRadius: '10px', fontSize: '1rem', fontWeight: 800,
               cursor: submitting || success ? 'not-allowed' : 'pointer',
-              boxShadow: '0 4px 16px rgba(22, 163, 74, 0.4)'
+              boxShadow: '0 4px 16px rgba(5, 150, 105, 0.4)'
             }}
           >
             {success ? '✅ Incident Report Logged & Dispatched!' : submitting ? 'Submitting…' : '🚀 Submit Verified Incident Report'}

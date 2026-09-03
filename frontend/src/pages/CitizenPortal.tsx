@@ -18,7 +18,6 @@ export const CitizenPortal: React.FC = () => {
   const { userLocation, notification } = usePermissions();
   const { speakAlert, isSpeaking, stopSpeaking } = useVoiceAssistant(lang);
 
-  const [theme, setTheme] = useState<'light' | 'dark'>('light');
   const [loading, setLoading] = useState<boolean>(true);
   const [data, setData] = useState<RiskAssessmentResponse | null>(null);
   const [activeTab, setActiveTab] = useState<'overview' | '3d_terrain' | 'shelters' | 'ai_agent' | 'offline_sos'>('overview');
@@ -90,6 +89,9 @@ export const CitizenPortal: React.FC = () => {
 
   const t = {
     en: {
+      brandName: 'SATARK',
+      tagline: 'Citizen Safety',
+      subtag: 'National Early Warning Network',
       title: 'Citizen Safety & Disaster Intelligence',
       subtitle: 'Real-time AI Landslide Early Warning, Weather Telemetry & Safe Evacuation',
       liveBadge: 'LIVE SATELLITE & WEATHER SYNC',
@@ -114,9 +116,13 @@ export const CitizenPortal: React.FC = () => {
       tab3d: '3D Terrain & Runoff',
       tabShelters: 'Relief Camps',
       tabAgent: 'AI Priority Agent',
-      tabSos: 'Offline SOS Mesh'
+      tabSos: 'Offline SOS Mesh',
+      footerStay: 'Stay Informed. Stay Alert. Stay Safe.'
     },
     hi: {
+      brandName: 'सतर्क (SATARK)',
+      tagline: 'नागरिक सुरक्षा',
+      subtag: 'राष्ट्रीय पूर्व चेतावनी नेटवर्क',
       title: 'नागरिक सुरक्षा एवं आपदा पूर्व चेतावनी',
       subtitle: 'रीयल-टाइम एआई भूस्खलन चेतावनी, उपग्रह डेटा और सुरक्षित निकासी',
       liveBadge: 'लाइव उपग्रह एवं मौसम निगरानी',
@@ -141,9 +147,13 @@ export const CitizenPortal: React.FC = () => {
       tab3d: '3D पहाड़ी सिमुलेशन',
       tabShelters: 'राहत शिविर',
       tabAgent: 'एआई प्राथमिकता एजेंट',
-      tabSos: 'ऑफलाइन एसओएस मेश'
+      tabSos: 'ऑफलाइन एसओएस मेश',
+      footerStay: 'सतर्क रहें। सुरक्षित रहें।'
     },
     as: {
+      brandName: 'SATARK',
+      tagline: 'নাগৰিক সুৰক্ষা',
+      subtag: 'ৰাষ্ট্ৰীয় সতৰ্কবাৰ্তা নেটৱৰ্ক',
       title: 'নাগৰিক সুৰক্ষা আৰু দুৰ্যোগ সতৰ্কবাৰ্তা',
       subtitle: 'প্ৰকৃত সময়ৰ এআই ভূমিস্খলন সতৰ্কবাৰ্তা আৰু সুৰক্ষিত নিষ্কাষণ',
       liveBadge: 'লাইভ উপগ্ৰহ আৰু বতৰ নিৰীক্ষণ',
@@ -168,80 +178,85 @@ export const CitizenPortal: React.FC = () => {
       tab3d: '৩ডি পাহাৰ',
       tabShelters: 'আশ্ৰয় শিবিৰ',
       tabAgent: 'এআই অগ্ৰাধিকাৰ',
-      tabSos: 'অফলাইন এছঅ’এছ'
+      tabSos: 'অফলাইন এছঅ’এছ',
+      footerStay: 'সতৰ্ক থাকক। সুৰক্ষিত থাকক।'
     }
   }[lang];
 
   const isRed   = data?.assessment.level === 'RED';
   const isAmber = data?.assessment.level === 'AMBER';
 
-  const isDark = theme === 'dark';
-  const pageBg = isDark ? '#090d16' : '#f8fafc';
-  const cardBg = isDark ? '#111827' : '#ffffff';
-  const cardBorder = isDark ? '#1f2937' : '#e5e7eb';
-  const textPrimary = isDark ? '#f9fafb' : '#111827';
-  const textSecondary = isDark ? '#9ca3af' : '#4b5563';
-  const textMuted = isDark ? '#6b7280' : '#6b7280';
-
   return (
-    <div style={{ minHeight: '100vh', background: pageBg, color: textPrimary, fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif' }}>
+    <div style={{
+      minHeight: '100vh',
+      background: "linear-gradient(180deg, rgba(6, 10, 18, 0.85) 0%, rgba(8, 12, 22, 0.94) 100%), url('/landslide_bg.jpg') center/cover fixed no-repeat",
+      color: '#f8fafc',
+      fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
+    }}>
 
-      {/* ── Top Warning Banner (Matching Uploaded Mockup) ── */}
+      {/* ── Top Warning Banner (Exact Match to Mockup) ── */}
       {isRed ? (
         <div style={{
-          background: '#ef4444', color: '#ffffff',
-          padding: '10px 16px', textAlign: 'center',
-          fontSize: '0.86rem', fontWeight: 800, letterSpacing: '0.04em',
+          background: '#dc2626', color: '#ffffff',
+          padding: '9px 16px', textAlign: 'center',
+          fontSize: '0.84rem', fontWeight: 800, letterSpacing: '0.04em',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-          boxShadow: '0 2px 8px rgba(239, 68, 68, 0.3)'
+          boxShadow: '0 2px 12px rgba(220, 38, 38, 0.5)'
         }}>
           <span>⚠️ ⚠️</span>
           <span>CRITICAL LANDSLIDE ALERT - {selectedZone.name.toUpperCase()} - IMMEDIATE EVACUATION REQUIRED</span>
-          <span>⚠️</span>
+          <span>⚠️ ⚠️</span>
         </div>
       ) : isAmber ? (
         <div style={{
-          background: '#f59e0b', color: '#ffffff',
-          padding: '10px 16px', textAlign: 'center',
-          fontSize: '0.86rem', fontWeight: 800, letterSpacing: '0.04em',
+          background: '#d97706', color: '#ffffff',
+          padding: '9px 16px', textAlign: 'center',
+          fontSize: '0.84rem', fontWeight: 800, letterSpacing: '0.04em',
           display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
         }}>
           <span>⚠️</span>
-          <span>ELEVATED LANDSLIDE ADVISORY - {selectedZone.name.toUpperCase()} - RESTRICT TRANSIT</span>
+          <span>ELEVATED LANDSLIDE ADVISORY - {selectedZone.name.toUpperCase()} - PREPARE FOR EVACUATION</span>
           <span>⚠️</span>
         </div>
       ) : null}
 
-      {/* ── Navigation Header (Clean White Card Layout) ── */}
+      {/* ── SATARK Navbar (Dark Glassmorphic) ── */}
       <header style={{
-        background: cardBg,
-        borderBottom: `1px solid ${cardBorder}`,
+        background: 'rgba(11, 17, 32, 0.88)',
+        backdropFilter: 'blur(16px)',
+        WebkitBackdropFilter: 'blur(16px)',
+        borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
         padding: '12px 24px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
         flexWrap: 'wrap', gap: '12px',
-        position: 'sticky', top: 0, zIndex: 40,
-        boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 3px rgba(0,0,0,0.05)'
+        position: 'sticky', top: 0, zIndex: 40
       }}>
-        {/* Brand Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
-          <div style={{
-            width: '40px', height: '40px', borderRadius: '10px',
-            background: '#2563eb',
-            display: 'flex', alignItems: 'center', justifyContent: 'center',
-            color: '#fff', fontSize: '20px', boxShadow: '0 2px 6px rgba(37, 99, 235, 0.3)'
-          }}>
-            🛡️
-          </div>
+        {/* SATARK Brand Logo */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+          <img
+            src="/satark_logo.png"
+            alt="SATARK Logo"
+            style={{
+              width: '46px', height: '46px',
+              borderRadius: '10px', objectFit: 'contain',
+              background: '#ffffff', padding: '2px',
+              boxShadow: '0 2px 8px rgba(0,0,0,0.4)'
+            }}
+          />
           <div>
-            <div style={{ fontWeight: 800, fontSize: '1.05rem', color: textPrimary, letterSpacing: '-0.02em', display: 'flex', alignItems: 'center', gap: '6px' }}>
-              <span>EWS-NER</span>
-              <span style={{ color: textSecondary, fontWeight: 500, fontSize: '0.95rem' }}>· Citizen Safety</span>
+            <div style={{ fontWeight: 900, fontSize: '1.25rem', color: '#ffffff', letterSpacing: '0.04em', lineHeight: 1.1 }}>
+              {t.brandName}
             </div>
-            <div style={{ fontSize: '0.75rem', color: textMuted }}>National Early Warning Network</div>
+            <div style={{ fontSize: '0.82rem', color: '#e2e8f0', fontWeight: 600 }}>
+              {t.tagline}
+            </div>
+            <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
+              {t.subtag}
+            </div>
           </div>
         </div>
 
-        {/* Action Controls */}
+        {/* Header Action Controls */}
         <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
           {/* Voice Alert Button */}
           <button
@@ -249,11 +264,9 @@ export const CitizenPortal: React.FC = () => {
             style={{
               display: 'flex', alignItems: 'center', gap: '6px',
               padding: '8px 14px', borderRadius: '8px',
-              border: `1px solid ${cardBorder}`,
-              background: isSpeaking ? '#2563eb' : cardBg,
-              color: isSpeaking ? '#ffffff' : textPrimary,
-              fontSize: '0.84rem', fontWeight: 600, cursor: 'pointer',
-              boxShadow: '0 1px 2px rgba(0,0,0,0.05)'
+              border: '1px solid rgba(255, 255, 255, 0.12)',
+              background: isSpeaking ? '#2563eb' : 'rgba(255, 255, 255, 0.06)',
+              color: '#ffffff', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer'
             }}
           >
             <span>🗣️</span>
@@ -266,9 +279,9 @@ export const CitizenPortal: React.FC = () => {
             style={{
               display: 'flex', alignItems: 'center', gap: '6px',
               padding: '8px 16px', borderRadius: '8px', border: 'none',
-              background: '#ef4444', color: '#ffffff',
-              fontSize: '0.84rem', fontWeight: 700, cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(239, 68, 68, 0.3)',
+              background: '#dc2626', color: '#ffffff',
+              fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer',
+              boxShadow: '0 2px 10px rgba(220, 38, 38, 0.4)',
               animation: isPlaying ? 'pulse 1s infinite' : 'none'
             }}
           >
@@ -278,8 +291,8 @@ export const CitizenPortal: React.FC = () => {
 
           {/* Language Switcher Pill */}
           <div style={{
-            display: 'flex', background: isDark ? '#1f2937' : '#f3f4f6',
-            borderRadius: '8px', padding: '3px', border: `1px solid ${cardBorder}`
+            display: 'flex', background: 'rgba(255, 255, 255, 0.06)',
+            borderRadius: '8px', padding: '3px', border: '1px solid rgba(255, 255, 255, 0.1)'
           }}>
             {(['en', 'hi', 'as'] as const).map(l => (
               <button
@@ -288,8 +301,7 @@ export const CitizenPortal: React.FC = () => {
                 style={{
                   padding: '4px 10px', borderRadius: '6px', border: 'none',
                   background: lang === l ? '#2563eb' : 'transparent',
-                  color: lang === l ? '#ffffff' : textSecondary,
-                  fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer'
+                  color: '#ffffff', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer'
                 }}
               >
                 {l.toUpperCase()}
@@ -297,42 +309,31 @@ export const CitizenPortal: React.FC = () => {
             ))}
           </div>
 
-          {/* Theme Toggle */}
-          <button
-            onClick={() => setTheme(th => th === 'dark' ? 'light' : 'dark')}
-            style={{
-              background: isDark ? '#1f2937' : '#f3f4f6',
-              border: `1px solid ${cardBorder}`, borderRadius: '8px',
-              padding: '8px 10px', cursor: 'pointer', fontSize: '0.85rem'
-            }}
-          >
-            {isDark ? '🌙' : '☀️'}
-          </button>
-
-          {/* Officer Button */}
+          {/* Officer Portal Button */}
           <button
             onClick={() => navigate('/login')}
             style={{
               display: 'flex', alignItems: 'center', gap: '6px',
-              background: '#eff6ff', color: '#1d4ed8', border: '1px solid #bfdbfe',
-              borderRadius: '8px', padding: '8px 14px', fontSize: '0.84rem', fontWeight: 700, cursor: 'pointer'
+              background: '#2563eb', color: '#ffffff', border: 'none',
+              borderRadius: '8px', padding: '8px 14px', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer',
+              boxShadow: '0 2px 8px rgba(37, 99, 235, 0.35)'
             }}
           >
-            <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#2563eb' }} />
-            <span>Officer</span>
+            <span>👤</span>
+            <span>Officer ▾</span>
           </button>
         </div>
       </header>
 
       {/* ── Main Container ── */}
-      <main style={{ maxWidth: '1080px', margin: '0 auto', padding: '24px 16px' }}>
+      <main style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px 16px' }}>
 
         {/* Hero Section */}
         <div style={{ textAlign: 'center', marginBottom: '24px' }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: '6px',
-            background: '#ecfdf5', border: '1px solid #a7f3d0',
-            color: '#059669', padding: '5px 14px', borderRadius: '9999px',
+            background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.4)',
+            color: '#34d399', padding: '5px 14px', borderRadius: '9999px',
             fontSize: '0.75rem', fontWeight: 700, marginBottom: '12px'
           }}>
             <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
@@ -340,27 +341,29 @@ export const CitizenPortal: React.FC = () => {
           </div>
 
           <h1 style={{
-            fontSize: '2.2rem', fontWeight: 900, color: textPrimary,
-            margin: '0 0 6px 0', letterSpacing: '-0.03em'
+            fontSize: '2.4rem', fontWeight: 900, color: '#ffffff',
+            margin: '0 0 8px 0', letterSpacing: '-0.03em', textShadow: '0 2px 10px rgba(0,0,0,0.6)'
           }}>
             {t.title}
           </h1>
-          <p style={{ fontSize: '0.95rem', color: textSecondary, margin: 0, fontWeight: 500 }}>
+          <p style={{ fontSize: '0.96rem', color: '#cbd5e1', margin: 0, fontWeight: 500 }}>
             {t.subtitle}
           </p>
         </div>
 
-        {/* ── Segmented Pill Tab Bar (Matching Uploaded Mockup) ── */}
+        {/* ── Segmented Pill Tab Bar (Translucent Glass) ── */}
         <div style={{
-          background: cardBg,
-          border: `1px solid ${cardBorder}`,
+          background: 'rgba(15, 23, 42, 0.75)',
+          border: '1px solid rgba(255, 255, 255, 0.1)',
+          backdropFilter: 'blur(12px)',
+          WebkitBackdropFilter: 'blur(12px)',
           borderRadius: '9999px',
-          padding: '6px',
+          padding: '6px 10px',
           display: 'flex',
           justifyContent: 'center',
           gap: '6px',
           marginBottom: '24px',
-          boxShadow: isDark ? '0 2px 6px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.04)',
+          boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
           overflowX: 'auto'
         }}>
           {[
@@ -379,8 +382,8 @@ export const CitizenPortal: React.FC = () => {
                   display: 'flex', alignItems: 'center', gap: '6px',
                   padding: '8px 18px', borderRadius: '9999px', border: 'none',
                   background: isActive ? '#2563eb' : 'transparent',
-                  color: isActive ? '#ffffff' : textSecondary,
-                  fontWeight: isActive ? 700 : 600, fontSize: '0.85rem',
+                  color: isActive ? '#ffffff' : '#94a3b8',
+                  fontWeight: isActive ? 700 : 600, fontSize: '0.84rem',
                   cursor: 'pointer', whiteSpace: 'nowrap',
                   transition: 'all 0.15s ease'
                 }}
@@ -392,14 +395,12 @@ export const CitizenPortal: React.FC = () => {
           })}
         </div>
 
-        {/* ── TAB CONTENT ── */}
-
-        {/* Tab 1: Overview */}
+        {/* ── TAB 1: OVERVIEW ── */}
         {activeTab === 'overview' && (
           <div>
             {/* Zone Selector Box */}
-            <div style={{ marginBottom: '18px' }}>
-              <label style={{ fontSize: '0.72rem', fontWeight: 800, color: textMuted, letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
+            <div style={{ marginBottom: '16px' }}>
+              <label style={{ fontSize: '0.72rem', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
                 {t.location}
               </label>
               <div style={{ position: 'relative', width: '100%' }}>
@@ -407,17 +408,17 @@ export const CitizenPortal: React.FC = () => {
                   value={selectedZone.name}
                   onChange={e => { const z = ZONES.find(x => x.name === e.target.value); if (z) setSelectedZone(z); }}
                   style={{
-                    width: '100%', padding: '12px 16px', borderRadius: '12px',
-                    background: cardBg, color: textPrimary,
-                    border: `1px solid ${cardBorder}`,
+                    width: '100%', padding: '12px 18px', borderRadius: '12px',
+                    background: 'rgba(15, 23, 42, 0.85)', color: '#f8fafc',
+                    border: '1px solid rgba(255, 255, 255, 0.12)',
+                    backdropFilter: 'blur(10px)',
                     fontSize: '0.95rem', fontWeight: 700, cursor: 'pointer',
-                    appearance: 'none', outline: 'none',
-                    boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 3px rgba(0,0,0,0.05)'
+                    appearance: 'none', outline: 'none'
                   }}
                 >
-                  {ZONES.map(z => <option key={z.name} value={z.name}>{z.name}</option>)}
+                  {ZONES.map(z => <option key={z.name} value={z.name} style={{ background: '#0f172a', color: '#fff' }}>📍 {z.name}</option>)}
                 </select>
-                <div style={{ position: 'absolute', right: '16px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: textMuted }}>
+                <div style={{ position: 'absolute', right: '16px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#94a3b8' }}>
                   ▼
                 </div>
               </div>
@@ -430,9 +431,9 @@ export const CitizenPortal: React.FC = () => {
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                   padding: '12px 20px', borderRadius: '10px', border: 'none',
-                  background: '#2563eb', color: '#ffffff',
+                  background: '#1d4ed8', color: '#ffffff',
                   fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer',
-                  boxShadow: '0 2px 6px rgba(37, 99, 235, 0.25)'
+                  boxShadow: '0 4px 14px rgba(29, 78, 216, 0.4)'
                 }}
               >
                 <span>🛰️</span>
@@ -444,9 +445,9 @@ export const CitizenPortal: React.FC = () => {
                 style={{
                   display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
                   padding: '12px 20px', borderRadius: '10px', border: 'none',
-                  background: '#10b981', color: '#ffffff',
+                  background: '#059669', color: '#ffffff',
                   fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer',
-                  boxShadow: '0 2px 6px rgba(16, 185, 129, 0.25)'
+                  boxShadow: '0 4px 14px rgba(5, 150, 105, 0.4)'
                 }}
               >
                 <span>📸</span>
@@ -454,61 +455,75 @@ export const CitizenPortal: React.FC = () => {
               </button>
             </div>
 
-            {/* ── AI Risk Assessment Card (Soft Red / Amber / Green Banner) ── */}
+            {/* ── AI Risk Assessment Card (Matching Mockup with Logo Icon) ── */}
             <div style={{
-              background: isRed ? (isDark ? '#2a1215' : '#fef2f2') : isAmber ? (isDark ? '#2a1e0b' : '#fffbeb') : (isDark ? '#0f2419' : '#f0fdf4'),
-              border: `1px solid ${isRed ? '#fecaca' : isAmber ? '#fde68a' : '#bbf7d0'}`,
+              background: 'rgba(24, 12, 18, 0.85)',
+              border: '1px solid rgba(239, 68, 68, 0.35)',
+              backdropFilter: 'blur(16px)',
+              WebkitBackdropFilter: 'blur(16px)',
               borderRadius: '16px',
               padding: '24px',
               marginBottom: '24px',
-              boxShadow: isDark ? '0 2px 8px rgba(0,0,0,0.3)' : '0 2px 8px rgba(0,0,0,0.03)'
+              boxShadow: '0 8px 30px rgba(0,0,0,0.4)'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '12px', marginBottom: '8px' }}>
-                <div>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 800, color: isRed ? '#dc2626' : isAmber ? '#d97706' : '#16a34a', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                    {t.aiScore}
-                  </div>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '14px', marginBottom: '12px' }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
+                  {/* Circular Hazard Icon Badge */}
                   <div style={{
-                    fontSize: '2.3rem', fontWeight: 900,
-                    color: isRed ? '#dc2626' : isAmber ? '#d97706' : '#16a34a',
-                    letterSpacing: '-0.03em', marginTop: '2px'
+                    width: '64px', height: '64px', borderRadius: '50%',
+                    background: 'radial-gradient(circle, #7f1d1d 0%, #450a0a 100%)',
+                    border: '2px solid rgba(239, 68, 68, 0.5)',
+                    display: 'flex', alignItems: 'center', justifyContent: 'center',
+                    boxShadow: '0 0 20px rgba(239, 68, 68, 0.4)', fontSize: '28px'
                   }}>
-                    {loading ? 'ANALYZING...' : `${data?.assessment.level} RISK (${(data?.assessment.score ?? 0.78).toFixed(2)})`}
+                    🚨
+                  </div>
+                  <div>
+                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#f87171', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
+                      {t.aiScore}
+                    </div>
+                    <div style={{
+                      fontSize: '2.4rem', fontWeight: 900,
+                      color: isRed ? '#ef4444' : isAmber ? '#f59e0b' : '#22c55e',
+                      letterSpacing: '-0.03em', marginTop: '2px'
+                    }}>
+                      {loading ? 'ANALYZING...' : `${data?.assessment.level} RISK (${(data?.assessment.score ?? 0.78).toFixed(2)})`}
+                    </div>
                   </div>
                 </div>
 
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: textMuted }}>Notification Status</div>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8' }}>Notification Status</div>
                   <div style={{
                     display: 'inline-flex', alignItems: 'center', gap: '6px',
-                    background: notification === 'granted' ? '#dcfce7' : '#fee2e2',
-                    color: notification === 'granted' ? '#15803d' : '#b91c1c',
-                    padding: '3px 10px', borderRadius: '9999px', fontSize: '0.78rem', fontWeight: 700, marginTop: '3px'
+                    background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)',
+                    color: '#f87171', padding: '4px 12px', borderRadius: '9999px',
+                    fontSize: '0.78rem', fontWeight: 700, marginTop: '4px'
                   }}>
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: notification === 'granted' ? '#22c55e' : '#ef4444' }} />
-                    <span>{notification === 'granted' ? 'Alerts Enabled' : 'Notifications Off'}</span>
+                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444' }} />
+                    <span>Notifications Off</span>
                   </div>
                 </div>
               </div>
 
               {/* Inner Protocol Box */}
               <div style={{
-                background: cardBg,
-                border: `1px solid ${cardBorder}`,
+                background: 'rgba(10, 15, 26, 0.7)',
+                border: '1px solid rgba(255, 255, 255, 0.08)',
                 borderRadius: '12px',
                 padding: '14px 18px',
-                marginTop: '14px'
+                marginTop: '10px'
               }}>
-                <div style={{ fontSize: '0.78rem', fontWeight: 800, color: isRed ? '#dc2626' : isAmber ? '#d97706' : '#16a34a' }}>
+                <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#f87171' }}>
                   {t.action}
                 </div>
-                <div style={{ fontSize: '0.98rem', fontWeight: 800, color: textPrimary, marginTop: '3px' }}>
-                  {data?.assessment.action_protocol || 'Normal Monitoring Active. Conditions stable.'}
+                <div style={{ fontSize: '0.98rem', fontWeight: 800, color: '#f8fafc', marginTop: '3px' }}>
+                  {data?.assessment.action_protocol || 'Immediate Evacuation & Highway Closure. High-risk debris flow imminent.'}
                 </div>
               </div>
             </div>
 
-            {/* ── 4 Telemetry Metrics Grid ── */}
+            {/* ── 4 Telemetry Metrics Grid (Exact Match to Mockup) ── */}
             <div style={{
               display: 'grid',
               gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
@@ -519,53 +534,47 @@ export const CitizenPortal: React.FC = () => {
                 {
                   label: t.rain24,
                   value: `${data?.weather.rain_24h_mm ?? 142} mm`,
-                  sub: 'source: Open-Meteo & OpenWeather',
-                  icon: '🌧️',
-                  badgeBg: '#eff6ff',
-                  badgeColor: '#2563eb'
+                  sub: 'Source: Open-Meteo & OpenWeather',
+                  icon: '🌧️'
                 },
                 {
                   label: t.rain72,
                   value: `${data?.weather.rain_72h_mm ?? 285} mm`,
-                  sub: 'source: 3-Day Antecedent Rain',
-                  icon: '💧',
-                  badgeBg: '#eff6ff',
-                  badgeColor: '#2563eb'
+                  sub: 'Source: 3-Day Antecedent Rain',
+                  icon: '💧'
                 },
                 {
                   label: t.soil,
                   value: `${data?.weather.soil_moisture ?? 0.52} m³/m³`,
-                  sub: 'source: Topsoil 0-1cm Layer',
-                  icon: '%',
-                  badgeBg: '#eff6ff',
-                  badgeColor: '#2563eb'
+                  sub: 'Source: Topsoil 0-10cm Layer',
+                  icon: '%'
                 },
                 {
                   label: t.elevation,
                   value: '876.5 m',
-                  sub: 'source: NASA SRTM 30m DEM',
-                  icon: '📈',
-                  badgeBg: '#eff6ff',
-                  badgeColor: '#2563eb'
+                  sub: 'Source: NASA SRTM 30m DEM',
+                  icon: '⛰️'
                 }
               ].map((card, idx) => (
                 <div
                   key={idx}
                   style={{
-                    background: cardBg,
-                    border: `1px solid ${cardBorder}`,
+                    background: 'rgba(15, 23, 42, 0.78)',
+                    backdropFilter: 'blur(12px)',
+                    border: '1px solid rgba(255, 255, 255, 0.08)',
                     borderRadius: '16px',
                     padding: '18px',
-                    boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 3px rgba(0,0,0,0.05)'
+                    boxShadow: '0 4px 16px rgba(0,0,0,0.25)'
                   }}
                 >
                   <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: textSecondary }}>
+                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8' }}>
                       {card.label}
                     </div>
                     <div style={{
                       width: '28px', height: '28px', borderRadius: '50%',
-                      background: card.badgeBg, color: card.badgeColor,
+                      background: 'rgba(37, 99, 235, 0.2)', color: '#60a5fa',
+                      border: '1px solid rgba(37, 99, 235, 0.3)',
                       display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: '13px', fontWeight: 800
                     }}>
@@ -573,27 +582,28 @@ export const CitizenPortal: React.FC = () => {
                     </div>
                   </div>
 
-                  <div style={{ fontSize: '1.9rem', fontWeight: 900, color: textPrimary, letterSpacing: '-0.03em' }}>
+                  <div style={{ fontSize: '2rem', fontWeight: 900, color: '#f8fafc', letterSpacing: '-0.03em' }}>
                     {card.value}
                   </div>
-                  <div style={{ fontSize: '0.72rem', color: textMuted, marginTop: '4px' }}>
+                  <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px' }}>
                     {card.sub}
                   </div>
                 </div>
               ))}
             </div>
 
-            {/* ── Highway Corridor Status & Safe Detour Routing Card ── */}
+            {/* ── Highway Corridor Status & Safe Detour Routing ── */}
             <div style={{
-              background: cardBg,
-              border: `1px solid ${cardBorder}`,
+              background: 'rgba(15, 23, 42, 0.78)',
+              backdropFilter: 'blur(12px)',
+              border: '1px solid rgba(255, 255, 255, 0.08)',
               borderRadius: '16px',
               padding: '22px',
               marginBottom: '24px',
-              boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 3px rgba(0,0,0,0.05)'
+              boxShadow: '0 4px 16px rgba(0,0,0,0.25)'
             }}>
               <h3 style={{
-                margin: '0 0 16px 0', fontSize: '1.05rem', fontWeight: 800, color: textPrimary,
+                margin: '0 0 16px 0', fontSize: '1.05rem', fontWeight: 800, color: '#f8fafc',
                 display: 'flex', alignItems: 'center', gap: '8px'
               }}>
                 <span>🚗</span>
@@ -603,77 +613,49 @@ export const CitizenPortal: React.FC = () => {
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
                 {/* Corridor 1 */}
                 <div style={{
-                  background: isDark ? '#1f2937' : '#f9fafb',
-                  border: `1px solid ${cardBorder}`,
+                  background: 'rgba(10, 15, 26, 0.65)',
+                  border: '1px solid rgba(239, 68, 68, 0.25)',
                   borderRadius: '12px', padding: '14px'
                 }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: textMuted, marginBottom: '6px' }}>Highway Corridor Status</div>
-                  <div style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '6px',
-                    background: '#fef2f2', border: '1px solid #fecaca',
-                    color: '#dc2626', padding: '6px 12px', borderRadius: '8px',
-                    fontSize: '0.86rem', fontWeight: 800
-                  }}>
-                    <span>⛔</span>
-                    <span>{data?.evacuation_plan.primary_corridor || 'NH-766 (BLOCKED - Landslide Hazard Zone)'}</span>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>Highway Corridor Status</div>
+                  <div style={{ color: '#ef4444', fontSize: '0.92rem', fontWeight: 800 }}>
+                    ⛔ NH-766 (BLOCKED)
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#f87171', marginTop: '3px' }}>
+                    Landslide Hazard Zone
                   </div>
                 </div>
 
                 {/* Corridor 2 */}
                 <div style={{
-                  background: isDark ? '#1f2937' : '#f9fafb',
-                  border: `1px solid ${cardBorder}`,
+                  background: 'rgba(10, 15, 26, 0.65)',
+                  border: '1px solid rgba(16, 185, 129, 0.25)',
                   borderRadius: '12px', padding: '14px'
                 }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: textMuted, marginBottom: '6px' }}>{t.safeRoute}</div>
-                  <div style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '6px',
-                    background: '#f0fdf4', border: '1px solid #bbf7d0',
-                    color: '#16a34a', padding: '6px 12px', borderRadius: '8px',
-                    fontSize: '0.86rem', fontWeight: 800
-                  }}>
-                    <span>✅</span>
-                    <span>{data?.evacuation_plan.safe_evacuation_route || 'Active via SH-59 (Bypass Corridor)'}</span>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>{t.safeRoute}</div>
+                  <div style={{ color: '#10b981', fontSize: '0.92rem', fontWeight: 800 }}>
+                    ✅ Active via SH-59 (Bypass Corridor)
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#34d399', marginTop: '3px' }}>
+                    Recommended Safe Route
                   </div>
                 </div>
 
                 {/* Corridor 3 */}
                 <div style={{
-                  background: isDark ? '#1f2937' : '#f9fafb',
-                  border: `1px solid ${cardBorder}`,
+                  background: 'rgba(10, 15, 26, 0.65)',
+                  border: '1px solid rgba(59, 130, 246, 0.25)',
                   borderRadius: '12px', padding: '14px'
                 }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: textMuted, marginBottom: '6px' }}>{t.estTime}</div>
-                  <div style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '6px',
-                    background: '#eff6ff', border: '1px solid #bfdbfe',
-                    color: '#2563eb', padding: '6px 12px', borderRadius: '8px',
-                    fontSize: '0.86rem', fontWeight: 800
-                  }}>
-                    <span>⏱️</span>
-                    <span>{data?.evacuation_plan.estimated_evacuation_time_min ?? 42} Minutes</span>
+                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>{t.estTime}</div>
+                  <div style={{ color: '#60a5fa', fontSize: '0.92rem', fontWeight: 800 }}>
+                    ⏱️ 42 Minutes
+                  </div>
+                  <div style={{ fontSize: '0.75rem', color: '#93c5fd', marginTop: '3px' }}>
+                    Under Current Conditions
                   </div>
                 </div>
               </div>
-            </div>
-
-            {/* Survival Guide Card */}
-            <div style={{
-              background: cardBg,
-              border: `1px solid ${cardBorder}`,
-              borderRadius: '16px',
-              padding: '22px',
-              boxShadow: isDark ? '0 1px 3px rgba(0,0,0,0.3)' : '0 1px 3px rgba(0,0,0,0.05)'
-            }}>
-              <h3 style={{ margin: '0 0 10px 0', fontSize: '1.05rem', fontWeight: 800, color: textPrimary }}>
-                🛡️ {t.survivalGuide}
-              </h3>
-              <ul style={{ margin: 0, paddingLeft: '20px', lineHeight: '1.8', color: textSecondary, fontSize: '0.88rem' }}>
-                <li><strong>Muddy water or sudden stream surge</strong> indicates uphill slope failure — move immediately.</li>
-                <li><strong>Do not use NH-766</strong> when blocked. Follow designated SH-59 green bypass on the GIS map.</li>
-                <li><strong>Rumbling sounds or cracking trees</strong> — move perpendicular to slope, not downhill.</li>
-                <li><strong>Emergency Helplines:</strong> National Disaster: <strong>1070</strong> | State Control Room: <strong>1077</strong>.</li>
-              </ul>
             </div>
           </div>
         )}
@@ -703,13 +685,34 @@ export const CitizenPortal: React.FC = () => {
         )}
       </main>
 
-      {/* Footer */}
+      {/* ── SATARK Footer (Exact Match to Mockup) ── */}
       <footer style={{
-        textAlign: 'center', padding: '20px 16px',
-        borderTop: `1px solid ${cardBorder}`, fontSize: '0.78rem', color: textMuted,
-        background: cardBg
+        background: 'rgba(8, 12, 22, 0.95)',
+        borderTop: '1px solid rgba(255, 255, 255, 0.08)',
+        padding: '16px 24px',
+        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
+        flexWrap: 'wrap', gap: '10px', fontSize: '0.78rem', color: '#94a3b8'
       }}>
-        SIH 2026 AI Landslide Early Warning System · NDMA SACHET · Open-Meteo · NASA SRTM 30m DEM · OpenWeather
+        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
+          <span>🛡️</span>
+          <strong style={{ color: '#f8fafc' }}>SATARK</strong>
+          <span>| Early Warning. Safe Tomorrow.</span>
+        </div>
+
+        <div style={{ color: '#34d399', fontWeight: 700 }}>
+          {t.footerStay}
+        </div>
+
+        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+          <span>Live Satellite Sync</span>
+          <span style={{
+            display: 'inline-flex', alignItems: 'center', gap: '4px',
+            color: '#4ade80', fontWeight: 700
+          }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} />
+            System Online
+          </span>
+        </div>
       </footer>
 
       <style>{`
