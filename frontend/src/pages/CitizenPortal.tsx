@@ -52,6 +52,8 @@ export const CitizenPortal: React.FC = () => {
     }
   }, [userLocation]);
 
+  const isFirstLoad = useRef<boolean>(true);
+
   useEffect(() => {
     setLoading(true);
     fetchRiskAssessment(selectedZone.lat, selectedZone.lon, selectedZone.slope, selectedZone.name)
@@ -61,15 +63,18 @@ export const CitizenPortal: React.FC = () => {
         const level = res.assessment.level;
         const alertKey = `${selectedZone.name}-${level}`;
 
-        // Trigger sound on RED or AMBER
-        if (level === 'RED' && lastAlertLevel.current !== 'RED') {
-          playCriticalSiren();
-          speakAlert(selectedZone.name, 'RED', res.assessment.action_protocol);
-        } else if (level === 'AMBER' && lastAlertLevel.current !== 'AMBER') {
-          playWarningBeep();
-        } else if (level === 'GREEN') {
-          stopSiren();
+        // Don't blast siren automatically on first page visit
+        if (!isFirstLoad.current) {
+          if (level === 'RED' && lastAlertLevel.current !== 'RED') {
+            playCriticalSiren();
+            speakAlert(selectedZone.name, 'RED', res.assessment.action_protocol);
+          } else if (level === 'AMBER' && lastAlertLevel.current !== 'AMBER') {
+            playWarningBeep();
+          } else if (level === 'GREEN') {
+            stopSiren();
+          }
         }
+        isFirstLoad.current = false;
         lastAlertLevel.current = level;
 
         // Send push notification
