@@ -189,7 +189,7 @@ export const CitizenPortal: React.FC = () => {
   return (
     <div style={{
       minHeight: '100vh',
-      background: "linear-gradient(180deg, rgba(6, 10, 18, 0.85) 0%, rgba(8, 12, 22, 0.94) 100%), url('/landslide_bg.jpg') center/cover fixed no-repeat",
+      background: "linear-gradient(180deg, rgba(6, 10, 18, 0.55) 0%, rgba(8, 12, 22, 0.70) 100%), url('/landslide_bg.jpg') center/cover fixed no-repeat",
       color: '#f8fafc',
       fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
     }}>

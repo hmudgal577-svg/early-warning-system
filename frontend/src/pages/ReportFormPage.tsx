@@ -77,7 +77,7 @@ const ReportFormPage = () => {
   return (
     <div style={{
       minHeight: '100vh',
-      background: "linear-gradient(180deg, rgba(6, 10, 18, 0.88) 0%, rgba(8, 12, 22, 0.96) 100%), url('/landslide_bg.jpg') center/cover fixed no-repeat",
+      background: "linear-gradient(180deg, rgba(6, 10, 18, 0.60) 0%, rgba(8, 12, 22, 0.75) 100%), url('/landslide_bg.jpg') center/cover fixed no-repeat",
       color: '#f8fafc',
       padding: '24px 16px',
       fontFamily: 'Inter, system-ui, sans-serif'
