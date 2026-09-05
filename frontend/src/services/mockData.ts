@@ -97,6 +97,9 @@ export function getMockRiskDetail(regionId: string): RiskDetail | null {
 // ── Mock login response ───────────────────────────────────────────────────────
 export const MOCK_USERS: Record<string, { token: string; role: string; district: string | null; languagePref: string; username: string }> = {
   'admin': { token: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhZG1pbiIsInJvbGUiOiJBRE1JTiIsImlhdCI6MTcyNTAyMDAwMCwiZXhwIjo5OTk5OTk5OTk5fQ.demo_token', role: 'ADMIN', district: null, languagePref: 'en', username: 'admin' },
+  'kamrup_official': { token: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJrYW1ydXBfb2ZmaWNpYWwiLCJyb2xlIjoiRElTVFJJQ1RfT0ZGSUNJQUwiLCJpYXQiOjE3MjUwMjAwMDAsImV4cCI6OTk5OTk5OTk5OX0.demo_token', role: 'DISTRICT_OFFICIAL', district: 'Kamrup Metropolitan', languagePref: 'en', username: 'kamrup_official' },
+  'ekh_official': { token: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJla2hfb2ZmaWNpYWwiLCJyb2xlIjoiRElTVFJJQ1RfT0ZGSUNJQUwiLCJpYXQiOjE3MjUwMjAwMDAsImV4cCI6OTk5OTk5OTk5OX0.demo_token', role: 'DISTRICT_OFFICIAL', district: 'East Khasi Hills', languagePref: 'en', username: 'ekh_official' },
+  'aizawl_officer': { token: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJhaXphd2xfb2ZmaWNlciIsInJvbGUiOiJGSUVMRF9PRkZJQ0VSIiwiaWF0IjoxNzI1MDIwMDAwLCJleHAiOjk5OTk5OTk5OTl9.demo_token', role: 'FIELD_OFFICER', district: 'Aizawl', languagePref: 'en', username: 'aizawl_officer' },
   'district_kam': { token: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJkaXN0cmljdF9rYW0iLCJyb2xlIjoiRElTVFJJQ1RfT0ZGSUNJQUwiLCJpYXQiOjE3MjUwMjAwMDAsImV4cCI6OTk5OTk5OTk5OX0.demo_token', role: 'DISTRICT_OFFICIAL', district: 'Kamrup Metropolitan', languagePref: 'en', username: 'district_kam' },
   'field_aiz': { token: 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiJmaWVsZF9haXoiLCJyb2xlIjoiRklFTERfT0ZGSUNFUiIsImlhdCI6MTcyNTAyMDAwMCwiZXhwIjo5OTk5OTk5OTk5fQ.demo_token', role: 'FIELD_OFFICER', district: 'Aizawl', languagePref: 'en', username: 'field_aiz' },
 };

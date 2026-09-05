@@ -20,9 +20,13 @@ public class Region {
     private Point centroid;
     
     @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = "region_type_enum")
+    @org.hibernate.annotations.JdbcType(org.hibernate.dialect.PostgreSQLEnumJdbcType.class)
     private RegionType regionType;
     
     @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = "road_status_enum")
+    @org.hibernate.annotations.JdbcType(org.hibernate.dialect.PostgreSQLEnumJdbcType.class)
     private RoadStatus roadStatus;
     
     private OffsetDateTime createdAt;

@@ -20,7 +20,12 @@ public class AppUser implements UserDetails {
     private String email;
     private String passwordHash;
     
+    @Column(unique = true)
+    private String phone;
+    
     @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = "user_role_enum")
+    @org.hibernate.annotations.JdbcType(org.hibernate.dialect.PostgreSQLEnumJdbcType.class)
     private UserRole role;
     
     private String district;

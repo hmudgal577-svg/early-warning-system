@@ -15,12 +15,16 @@ public class Alert {
     private UUID regionId;
     
     @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = "severity_enum")
+    @org.hibernate.annotations.JdbcType(org.hibernate.dialect.PostgreSQLEnumJdbcType.class)
     private Severity severity;
     
     private String messageEn;
     private String messageAs;
     
     @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = "alert_channel_enum")
+    @org.hibernate.annotations.JdbcType(org.hibernate.dialect.PostgreSQLEnumJdbcType.class)
     private AlertChannel channel;
     
     private String contributingSummary;
@@ -28,6 +32,8 @@ public class Alert {
     private OffsetDateTime sentAt;
     
     @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = "alert_status_enum")
+    @org.hibernate.annotations.JdbcType(org.hibernate.dialect.PostgreSQLEnumJdbcType.class)
     @Builder.Default
     private AlertStatus status = AlertStatus.PENDING;
     

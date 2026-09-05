@@ -16,9 +16,12 @@ public class TerrainProfile {
     private UUID regionId;
     
     private BigDecimal slopeAngleDeg;
+    @Column(name = "elevation_m")
     private int elevationM;
     
     @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = "land_use_enum")
+    @org.hibernate.annotations.JdbcType(org.hibernate.dialect.PostgreSQLEnumJdbcType.class)
     private LandUse landUse;
     
     private String soilType;

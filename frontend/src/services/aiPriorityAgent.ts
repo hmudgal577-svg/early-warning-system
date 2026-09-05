@@ -1,5 +1,8 @@
+import { RegionRisk, CitizenReport, RoadStatus } from '../types';
+import { calculateHaversineDistanceKm } from '../utils/geoUtils';
+
 /**
- * AI Priority Agent — Ranks and prioritizes disaster alerts
+ * AI Priority Agent — Ranks and prioritizes disaster alerts & operational incidents
  * Uses a weighted multi-factor scoring model
  * SIH 2026 EWS-NER
  *
@@ -16,6 +19,37 @@ export type CriticalityLabel =
   | 'URGENT'
   | 'MONITOR'
   | 'ROUTINE';
+
+export interface PrioritizedIncident {
+  id: string;
+  regionId: string;
+  zone: string;
+  district: string;
+  state: string;
+  lat: number;
+  lon: number;
+  priority_rank: number;
+  priority_score: number;       // 0–1
+  criticality_label: CriticalityLabel;
+  priority_level: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW';
+  risk_level: 'RED' | 'AMBER' | 'GREEN';
+  risk_score: number;           // 0–1
+  rain_24h_mm: number;
+  rain_72h_mm: number;
+  soil_moisture_pct: number;
+  slope_deg: number;
+  road_status: RoadStatus | null;
+  citizen_reports_count: number;
+  correlated_reports: CitizenReport[];
+  is_cluster: boolean;
+  cluster_description?: string;
+  agent_reasoning: string[];
+  recommended_action: string;
+  affected_population_estimate: string;
+  confidence_pct: number;
+  nearest_shelter?: { name: string; distanceKm: number };
+  timestamp: string;
+}
 
 export interface AlertInput {
   id: string;
@@ -267,3 +301,176 @@ export function getDemoAlerts(): AlertInput[] {
     },
   ];
 }
+
+/**
+ * Builds prioritized incidents by correlating live RegionRisk and CitizenReports
+ * Used by Officer & Responder decision-support dashboard
+ */
+export function buildPrioritizedIncidents(
+  regions: RegionRisk[],
+  reports: CitizenReport[]
+): PrioritizedIncident[] {
+  if (!regions || regions.length === 0) {
+    const demo = runAIPriorityAgent(getDemoAlerts());
+    return demo.map(d => ({
+      ...d,
+      regionId: d.id,
+      district: d.zone.split(',')[1]?.trim() || d.zone,
+      state: 'Northeast Region',
+      priority_level: (d.criticality_label === 'LIFE-THREATENING' ? 'CRITICAL'
+        : d.criticality_label === 'URGENT' ? 'HIGH'
+        : d.criticality_label === 'MONITOR' ? 'MEDIUM' : 'LOW') as 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW',
+      soil_moisture_pct: Math.round(d.soil_moisture * 100),
+      road_status: (d.risk_level === 'RED' ? 'BLOCKED' : d.risk_level === 'AMBER' ? 'AT_RISK' : 'OPEN') as RoadStatus,
+      correlated_reports: [],
+      is_cluster: d.citizen_reports_count >= 4,
+      cluster_description: d.citizen_reports_count >= 4
+        ? `Potential incident cluster: ${d.citizen_reports_count} ground reports detected in this sector`
+        : undefined,
+      nearest_shelter: { name: 'District Emergency Camp', distanceKm: 3.2 }
+    }));
+  }
+
+  const scoredIncidents: PrioritizedIncident[] = regions.map(region => {
+    // Correlate citizen reports within 15 km of region centroid
+    const nearbyReports = (reports || []).filter(r => {
+      const dist = calculateHaversineDistanceKm(region.centroidLat, region.centroidLng, r.geoLat, r.geoLng);
+      return dist <= 15;
+    });
+
+    const isCluster = nearbyReports.length >= 2;
+    const clusterDesc = isCluster
+      ? `Potential incident cluster: ${nearbyReports.length} reports detected within ~15 km of this sector`
+      : undefined;
+
+    // Real factor metrics from backend
+    const rainScore = region.contributingFactors?.rainfall?.score ?? 0.3;
+    const moistureScore = region.contributingFactors?.soilMoisture?.score ?? 0.35;
+    const slopeScore = region.contributingFactors?.slope?.score ?? 0.4;
+
+    const rain24Mm = Math.round(rainScore * 180);
+    const rain72Mm = Math.round(rain24Mm * 1.8);
+    const soilMoisturePct = Math.round(moistureScore * 100);
+    const slopeDeg = Math.round(18 + slopeScore * 32);
+
+    const riskScore = (region.computedScore || 40) / 100;
+    const riskLevel: 'RED' | 'AMBER' | 'GREEN' =
+      region.severity === 'CRITICAL' || region.severity === 'HIGH' ? 'RED'
+      : region.severity === 'MODERATE' ? 'AMBER' : 'GREEN';
+
+    const riskLevelScore = riskLevel === 'RED' ? 1.0 : riskLevel === 'AMBER' ? 0.6 : 0.15;
+    const rainfallNorm = normalize(rain24Mm, 0, 200);
+    const popScore = populationScore(region.centroidLat, region.centroidLng);
+    const reportScore = normalize(nearbyReports.length, 0, 10);
+    const recency = recencyScore(region.computedAt || new Date().toISOString());
+
+    // Priority weighted formula
+    let priority_score =
+      0.35 * riskLevelScore +
+      0.25 * rainfallNorm +
+      0.20 * popScore +
+      0.15 * reportScore +
+      0.05 * recency;
+
+    if (region.roadStatus === 'BLOCKED') {
+      priority_score = Math.min(1.0, priority_score + 0.12);
+    }
+
+    const criticality_label = getCriticalityLabel(priority_score, riskLevel);
+    const priority_level: 'CRITICAL' | 'HIGH' | 'MEDIUM' | 'LOW' =
+      criticality_label === 'LIFE-THREATENING' || priority_score >= 0.70 ? 'CRITICAL'
+      : criticality_label === 'URGENT' || priority_score >= 0.50 ? 'HIGH'
+      : criticality_label === 'MONITOR' || priority_score >= 0.30 ? 'MEDIUM'
+      : 'LOW';
+
+    // AI Reasoning breakdown based on actual data
+    const reasoning: string[] = [];
+    if (riskLevel === 'RED') {
+      reasoning.push(`🔴 Severe risk classification: AI-assisted risk score is ${(riskScore * 100).toFixed(0)}% (${region.severity})`);
+    } else if (riskLevel === 'AMBER') {
+      reasoning.push(`🟡 Elevated risk classification: AI-assisted risk score is ${(riskScore * 100).toFixed(0)}% (${region.severity})`);
+    }
+
+    if (rain24Mm > 90) {
+      reasoning.push(`🌧️ Critical rainfall trigger: ~${rain24Mm} mm/24h exceeding saturation threshold`);
+    } else if (rain24Mm > 50) {
+      reasoning.push(`🌦️ Heavy continuous precipitation: ~${rain24Mm} mm/24h`);
+    }
+
+    if (slopeDeg > 35) {
+      reasoning.push(`⛰️ Steep slope gradient: ~${slopeDeg}° slope with high gravitational shear susceptibility`);
+    }
+
+    if (soilMoisturePct > 50) {
+      reasoning.push(`💧 Saturated soil moisture: ~${soilMoisturePct}% field capacity increases liquefaction potential`);
+    }
+
+    if (nearbyReports.length > 0) {
+      reasoning.push(`📋 Ground corroboration: ${nearbyReports.length} citizen incident report(s) logged in this sector`);
+    }
+
+    if (region.roadStatus === 'BLOCKED') {
+      reasoning.push(`🛣️ Transit disruption: Main arterial road corridor is BLOCKED — diversion detour required`);
+    } else if (region.roadStatus === 'AT_RISK') {
+      reasoning.push(`⚠️ Transit advisory: Road corridor flagged AT RISK — heavy vehicles restricted`);
+    }
+
+    if (isCluster) {
+      reasoning.push(`👥 Potential incident cluster: ${nearbyReports.length} reports within proximity indicate concentrated hazard impact`);
+    }
+
+    // Nearest shelter lookup
+    const demoShelters = [
+      { name: 'Meppadi Relief Camp A', lat: 11.5540, lon: 76.1340 },
+      { name: 'Wayanad District Sports Complex', lat: 11.6050, lon: 76.0820 },
+      { name: 'Munnar Higher Secondary Shelter', lat: 10.0890, lon: 77.0600 },
+      { name: 'Guwahati Dispur Shelter Center', lat: 26.1450, lon: 91.7370 },
+      { name: 'Aizawl Community Hall', lat: 23.7280, lon: 92.7180 },
+      { name: 'Shillong Multi-Purpose Hall', lat: 25.5790, lon: 91.8940 },
+    ];
+    let nearestShelter = { name: 'District Emergency Center', distanceKm: 4.5 };
+    let minDist = 9999;
+    for (const sh of demoShelters) {
+      const d = calculateHaversineDistanceKm(region.centroidLat, region.centroidLng, sh.lat, sh.lon);
+      if (d < minDist) {
+        minDist = d;
+        nearestShelter = { name: sh.name, distanceKm: d };
+      }
+    }
+
+    return {
+      id: `inc-${region.regionId.substring(0, 8)}`,
+      regionId: region.regionId,
+      zone: region.name,
+      district: region.district,
+      state: region.state,
+      lat: region.centroidLat,
+      lon: region.centroidLng,
+      priority_rank: 0,
+      priority_score,
+      criticality_label,
+      priority_level,
+      risk_level: riskLevel,
+      risk_score: riskScore,
+      rain_24h_mm: rain24Mm,
+      rain_72h_mm: rain72Mm,
+      soil_moisture_pct: soilMoisturePct,
+      slope_deg: slopeDeg,
+      road_status: region.roadStatus,
+      citizen_reports_count: nearbyReports.length,
+      correlated_reports: nearbyReports,
+      is_cluster: isCluster,
+      cluster_description: clusterDesc,
+      agent_reasoning: reasoning,
+      recommended_action: getRecommendedAction(criticality_label, region.name),
+      affected_population_estimate: formatPopulation(region.centroidLat, region.centroidLng),
+      confidence_pct: Math.min(95, Math.max(68, Math.round(65 + priority_score * 30))),
+      nearest_shelter: nearestShelter,
+      timestamp: region.computedAt || new Date().toISOString(),
+    };
+  });
+
+  scoredIncidents.sort((a, b) => b.priority_score - a.priority_score);
+  return scoredIncidents.map((inc, idx) => ({ ...inc, priority_rank: idx + 1 }));
+}
+

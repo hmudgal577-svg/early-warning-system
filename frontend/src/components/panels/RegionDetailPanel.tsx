@@ -93,17 +93,36 @@ export const RegionDetailPanel: React.FC<Props> = ({ regionId, onClose, userRole
             ))}
           </div>
 
-          {(userRole === 'ADMIN' || userRole === 'DISTRICT_OFFICIAL') && (
+          {(userRole === 'ADMIN' || userRole === 'DISTRICT_OFFICIAL' || userRole === 'FIELD_OFFICER') && (
             <div style={{ marginTop: '24px' }}>
-              <h3 style={{ fontSize: '0.85rem', marginBottom: '8px', color: 'var(--color-base-000)' }}>Road Status</h3>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
+                <h3 style={{ fontSize: '0.85rem', margin: 0, color: 'var(--color-base-000)' }}>Road Corridor Status</h3>
+                {!navigator.onLine && (
+                  <span style={{ fontSize: '0.7rem', color: '#f59e0b', fontWeight: 700 }}>📴 Offline (Queued)</span>
+                )}
+              </div>
               <select 
                 value={detail.roadStatus || 'OPEN'} 
-                onChange={(e) => updateRoadStatus(detail.regionId, e.target.value as any)}
-                style={{ width: '100%', padding: '8px', background: 'var(--color-base-800)', color: 'var(--color-base-100)', border: '1px solid var(--color-base-600)' }}
+                onChange={async (e) => {
+                  const newStatus = e.target.value as any;
+                  setDetail(prev => prev ? { ...prev, roadStatus: newStatus } : null);
+                  try {
+                    if (navigator.onLine) {
+                      await updateRoadStatus(detail.regionId, newStatus);
+                    } else {
+                      const { queueRoadStatus } = await import('../../services/offlineStore');
+                      await queueRoadStatus(detail.regionId, newStatus, detail.name);
+                    }
+                  } catch {
+                    const { queueRoadStatus } = await import('../../services/offlineStore');
+                    await queueRoadStatus(detail.regionId, newStatus, detail.name);
+                  }
+                }}
+                style={{ width: '100%', padding: '8px', background: 'var(--color-base-800)', color: 'var(--color-base-100)', border: '1px solid var(--color-base-600)', borderRadius: '4px' }}
               >
-                <option value="OPEN">OPEN</option>
-                <option value="BLOCKED">BLOCKED</option>
-                <option value="AT_RISK">AT RISK</option>
+                <option value="OPEN">🟢 OPEN (Standard Transit)</option>
+                <option value="AT_RISK">🟡 AT RISK (Heavy Vehicles Restricted)</option>
+                <option value="BLOCKED">🔴 BLOCKED (Hazard Closure / Detour Active)</option>
               </select>
             </div>
           )}

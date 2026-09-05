@@ -9,4 +9,5 @@ public interface CitizenReportRepository extends JpaRepository<CitizenReport, UU
     List<CitizenReport> findByRegionIdAndStatusIn(UUID regionId, List<CitizenReport.ReportStatus> statuses);
     long countByRegionIdAndStatusAndCreatedAtAfter(UUID regionId, CitizenReport.ReportStatus status, OffsetDateTime after);
     List<CitizenReport> findTop20ByOrderByCreatedAtDesc();
+    java.util.Optional<CitizenReport> findByClientReportId(String clientReportId);
 }

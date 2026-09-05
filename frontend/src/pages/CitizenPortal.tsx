@@ -5,10 +5,15 @@ import { sendRiskAlert } from '../services/notificationService';
 import { useAlertSound } from '../hooks/useAlertSound';
 import { usePermissions } from '../hooks/usePermissions';
 import { useVoiceAssistant } from '../hooks/useVoiceAssistant';
-import { AIPriorityPanel } from '../components/AIPriorityPanel';
 import { Terrain3DVisualizer } from '../components/map/Terrain3DVisualizer';
 import { ShelterResourcePanel } from '../components/panels/ShelterResourcePanel';
 import { OfflineSosMesh } from '../components/panels/OfflineSosMesh';
+import { OfflineStatusHeader } from '../components/layout/OfflineStatusHeader';
+import { OfflineRescueMode } from '../components/emergency/OfflineRescueMode';
+import { OfflineVectorMap } from '../components/map/OfflineVectorMap';
+import { calculateHaversineDistanceKm, calculateCompassBearing } from '../utils/geoUtils';
+import { getCachedHeatmapWithMeta, getCachedIncidents } from '../services/offlineStore';
+import { isCitizenAuthenticated, getCachedCitizenProfile, logoutCitizen } from '../services/citizenAuthService';
 import { RiskAssessmentResponse } from '../types';
 
 export const CitizenPortal: React.FC = () => {
@@ -18,9 +23,27 @@ export const CitizenPortal: React.FC = () => {
   const { userLocation, notification } = usePermissions();
   const { speakAlert, isSpeaking, stopSpeaking } = useVoiceAssistant(lang);
 
+  const [theme, setTheme] = useState<'dark' | 'light'>('dark');
   const [loading, setLoading] = useState<boolean>(true);
   const [data, setData] = useState<RiskAssessmentResponse | null>(null);
-  const [activeTab, setActiveTab] = useState<'overview' | '3d_terrain' | 'shelters' | 'ai_agent' | 'offline_sos'>('overview');
+  const [activeTab, setActiveTab] = useState<'overview' | '3d_terrain' | 'shelters' | 'offline_sos'>('overview');
+
+  const [profileMenuOpen, setProfileMenuOpen] = useState<boolean>(false);
+  const [citizenProfile, setCitizenProfile] = useState(() => getCachedCitizenProfile());
+  const [isAuth, setIsAuth] = useState<boolean>(() => isCitizenAuthenticated());
+
+  useEffect(() => {
+    const handleAuth = () => {
+      setIsAuth(isCitizenAuthenticated());
+      setCitizenProfile(getCachedCitizenProfile());
+    };
+    window.addEventListener('satark-auth-changed', handleAuth);
+    window.addEventListener('satark-profile-updated', handleAuth);
+    return () => {
+      window.removeEventListener('satark-auth-changed', handleAuth);
+      window.removeEventListener('satark-profile-updated', handleAuth);
+    };
+  }, []);
   
   const [selectedZone, setSelectedZone] = useState({
     name: 'Meppadi, Wayanad (Testbed)',
@@ -52,7 +75,73 @@ export const CitizenPortal: React.FC = () => {
     }
   }, [userLocation]);
 
-  const isFirstLoad = useRef<boolean>(true);
+  const [showOfflineMap, setShowOfflineMap] = useState<boolean>(false);
+  const [nearbyHazard, setNearbyHazard] = useState<{
+    name: string;
+    distKm: number;
+    bearing: string;
+    severity: string;
+  } | null>(null);
+
+  // Proximity Calculation: Find closest high-risk landslide hazard zone or incident from cached data
+  useEffect(() => {
+    const checkNearbyHazards = async () => {
+      try {
+        const citizenLat = userLocation?.lat || selectedZone.lat;
+        const citizenLon = userLocation?.lon || selectedZone.lon;
+
+        const [cachedH, cachedR] = await Promise.all([
+          getCachedHeatmapWithMeta(),
+          getCachedIncidents(),
+        ]);
+
+        let closest: { name: string; distKm: number; bearing: string; severity: string } | null = null;
+
+        if (cachedH?.data && cachedH.data.length > 0) {
+          for (const region of cachedH.data) {
+            if (region.severity === 'CRITICAL' || region.severity === 'HIGH' || region.computedScore >= 0.55) {
+              const dist = calculateHaversineDistanceKm(citizenLat, citizenLon, region.centroidLat, region.centroidLng);
+              const bearing = calculateCompassBearing(citizenLat, citizenLon, region.centroidLat, region.centroidLng);
+              if (!closest || dist < closest.distKm) {
+                closest = {
+                  name: region.name,
+                  distKm: dist,
+                  bearing,
+                  severity: region.severity,
+                };
+              }
+            }
+          }
+        }
+
+        if (cachedR?.data && cachedR.data.length > 0) {
+          for (const rep of cachedR.data) {
+            if (rep.category === 'CRACK' || rep.category === 'SLOPE_MOVEMENT' || rep.category === 'BLOCKED_ROAD') {
+              const dist = calculateHaversineDistanceKm(citizenLat, citizenLon, rep.geoLat, rep.geoLng);
+              const bearing = calculateCompassBearing(citizenLat, citizenLon, rep.geoLat, rep.geoLng);
+              if (!closest || dist < closest.distKm) {
+                closest = {
+                  name: `Incident: ${rep.category.replace('_', ' ')}`,
+                  distKm: dist,
+                  bearing,
+                  severity: 'HIGH',
+                };
+              }
+            }
+          }
+        }
+
+        // Only display if within relevant proximity (<= 50km)
+        if (closest && closest.distKm <= 50) {
+          setNearbyHazard(closest);
+        } else {
+          setNearbyHazard(null);
+        }
+      } catch {}
+    };
+
+    checkNearbyHazards();
+  }, [userLocation, selectedZone]);
 
   useEffect(() => {
     setLoading(true);
@@ -63,22 +152,19 @@ export const CitizenPortal: React.FC = () => {
         const level = res.assessment.level;
         const alertKey = `${selectedZone.name}-${level}`;
 
-        // Don't blast siren automatically on first page visit
-        if (!isFirstLoad.current) {
-          if (level === 'RED' && lastAlertLevel.current !== 'RED') {
-            playCriticalSiren();
-            speakAlert(selectedZone.name, 'RED', res.assessment.action_protocol);
-          } else if (level === 'AMBER' && lastAlertLevel.current !== 'AMBER') {
-            playWarningBeep();
-          } else if (level === 'GREEN') {
-            stopSiren();
-          }
+        // Trigger sound on RED or AMBER
+        if (level === 'RED' && lastAlertLevel.current !== 'RED') {
+          playCriticalSiren();
+          speakAlert(selectedZone.name, 'RED', res.assessment.action_protocol);
+        } else if (level === 'AMBER' && lastAlertLevel.current !== 'AMBER') {
+          playWarningBeep();
+        } else if (level === 'GREEN') {
+          stopSiren();
         }
-        isFirstLoad.current = false;
         lastAlertLevel.current = level;
 
         // Send push notification
-        if (!notificationSent.current.has(alertKey) && (notification === 'granted' || Notification.permission === 'granted')) {
+        if (!notificationSent.current.has(alertKey) && notification === 'granted') {
           await sendRiskAlert({
             zone: selectedZone.name,
             level,
@@ -94,578 +180,544 @@ export const CitizenPortal: React.FC = () => {
 
   const t = {
     en: {
-      brandName: 'SATARK',
-      tagline: 'Citizen Safety',
-      subtag: 'National Early Warning Network',
       title: 'Citizen Safety & Disaster Intelligence',
       subtitle: 'Real-time AI Landslide Early Warning, Weather Telemetry & Safe Evacuation',
       liveBadge: 'LIVE SATELLITE & WEATHER SYNC',
-      location: 'YOUR MONITORED ZONE',
-      aiScore: 'AI LANDSLIDE SUSCEPTIBILITY INDEX',
-      action: 'Emergency Action Protocol:',
+      location: 'Your Monitored Zone',
+      aiScore: 'Multi-Factor Susceptibility Score (MCDA)',
+      action: 'Emergency Action Protocol',
       rain24: '24h Cumulative Rain',
       rain72: '72h Total Rainfall',
       soil: 'Soil Moisture Saturation',
       elevation: 'NASA SRTM 30m Elevation',
-      roadStatus: 'Highway Corridor Status & Safe Detour Routing',
-      safeRoute: 'Guaranteed Safe Evacuation Route',
+      slope: 'Terrain Slope Angle',
+      roadStatus: 'Highway Corridor Status',
+      safeRoute: 'Recommended Evacuation Route (Subject to ground confirmation)',
       estTime: 'Est. Evacuation Time',
-      sirenOn: 'Mute Siren',
-      sirenOff: 'Emergency Siren',
-      voiceBtn: 'Speak Voice Alert',
-      stopVoiceBtn: 'Stop Voice',
+      sirenOn: '🔇 Mute Siren',
+      sirenOff: '🔊 Emergency Siren',
+      voiceBtn: '🗣️ Speak Voice Alert',
+      stopVoiceBtn: '⏹️ Stop Voice',
       survivalGuide: 'Emergency Survival & Evacuation Protocols',
-      reportBtn: 'AI Scan & Report Hazard',
-      cmdMapBtn: 'GIS Command Map',
-      tabOverview: 'Overview',
-      tab3d: '3D Terrain & Runoff',
-      tabShelters: 'Relief Camps',
-      tabAgent: 'AI Priority Agent',
-      tabSos: 'Offline SOS Mesh',
-      footerStay: 'Stay Informed. Stay Alert. Stay Safe.'
+      reportBtn: '📸 AI Scan & Report Hazard',
+      cmdMapBtn: '🛰️ GIS Command Map',
+      tabOverview: '📊 Overview',
+      tab3d: '⛰️ 3D Terrain & Runoff',
+      tabShelters: '🏥 Relief Camps',
+      tabSos: '📴 Offline SOS Mesh'
     },
     hi: {
-      brandName: 'सतर्क (SATARK)',
-      tagline: 'नागरिक सुरक्षा',
-      subtag: 'राष्ट्रीय पूर्व चेतावनी नेटवर्क',
       title: 'नागरिक सुरक्षा एवं आपदा पूर्व चेतावनी',
       subtitle: 'रीयल-टाइम एआई भूस्खलन चेतावनी, उपग्रह डेटा और सुरक्षित निकासी',
       liveBadge: 'लाइव उपग्रह एवं मौसम निगरानी',
       location: 'आपका निगरानी क्षेत्र',
-      aiScore: 'एआई भूस्खलन संवेदनशीलता स्कोर',
-      action: 'आपातकालीन कार्रवाई निर्देश:',
+      aiScore: 'मल्टी-फैक्टर संवेदनशीलता स्कोर (MCDA)',
+      action: 'आपातकालीन कार्रवाई निर्देश',
       rain24: 'पिछले 24 घंटे की बारिश',
       rain72: '72 घंटे की कुल बारिश',
       soil: 'मिट्टी की नमी',
       elevation: 'नासा 30m डिजिटल ऊंचाई',
-      roadStatus: 'राजमार्ग स्थिति एवं सुरक्षित वैकल्पिक मार्ग',
-      safeRoute: 'सुरक्षित वैकल्पिक निकासी मार्ग',
+      slope: 'पहाड़ी ढलान कोण',
+      roadStatus: 'राजमार्ग स्थिति',
+      safeRoute: 'अनुशंसित निकासी मार्ग (जमीनी पुष्टि के अधीन)',
       estTime: 'अनुमानित निकासी समय',
-      sirenOn: 'सायरन बंद करें',
-      sirenOff: 'आपातकालीन सायरन',
-      voiceBtn: 'आवाज में सुनें',
-      stopVoiceBtn: 'आवाज रोकें',
+      sirenOn: '🔇 सायरन बंद करें',
+      sirenOff: '🔊 सायरन टेस्ट',
+      voiceBtn: '🗣️ आवाज में सुनें',
+      stopVoiceBtn: '⏹️ आवाज रोकें',
       survivalGuide: 'आपातकालीन सुरक्षा एवं बचाव नियम',
-      reportBtn: 'एआई स्कैन व रिपोर्ट करें',
-      cmdMapBtn: 'जीआईएस कमांड मैप',
-      tabOverview: 'अवलोकन',
-      tab3d: '3D पहाड़ी सिमुलेशन',
-      tabShelters: 'राहत शिविर',
-      tabAgent: 'एआई प्राथमिकता एजेंट',
-      tabSos: 'ऑफलाइन एसओएस मेश',
-      footerStay: 'सतर्क रहें। सुरक्षित रहें।'
+      reportBtn: '📸 एआई स्कैन व रिपोर्ट करें',
+      cmdMapBtn: '🛰️ जीआईएस मैप खोलें',
+      tabOverview: '📊 अवलोकन',
+      tab3d: '⛰️ 3D पहाड़ी सिमुलेशन',
+      tabShelters: '🏥 राहत शिविर',
+      tabSos: '📴 ऑफलाइन एसओएस मेश'
     },
     as: {
-      brandName: 'SATARK',
-      tagline: 'নাগৰিক সুৰক্ষা',
-      subtag: 'ৰাষ্ট্ৰীয় সতৰ্কবাৰ্তা নেটৱৰ্ক',
       title: 'নাগৰিক সুৰক্ষা আৰু দুৰ্যোগ সতৰ্কবাৰ্তা',
       subtitle: 'প্ৰকৃত সময়ৰ এআই ভূমিস্খলন সতৰ্কবাৰ্তা আৰু সুৰক্ষিত নিষ্কাষণ',
       liveBadge: 'লাইভ উপগ্ৰহ আৰু বতৰ নিৰীক্ষণ',
       location: 'আপোনাৰ নিৰীক্ষণ অঞ্চল',
-      aiScore: 'এআই ভূমিস্খলন আশংকা সূচক',
-      action: 'জৰুৰীকালীন নিৰ্দেশনা:',
+      aiScore: 'বহু-কাৰকভিত্তিক সংवेदनশীলতা সূচক (MCDA)',
+      action: 'জৰুৰীকালীন নিৰ্দেশনা',
       rain24: '২৪ ঘণ্টাৰ বৰষুণ',
       rain72: '৭২ ঘণ্টাৰ বৰষুণ',
       soil: 'মাটিৰ আৰ্দ্ৰতা',
       elevation: 'নাছা ৩০মি উচ্চতা',
-      roadStatus: 'ৰাজপথৰ স্থিতি আৰু সুৰক্ষিত বিকল্প পথ',
-      safeRoute: 'সুৰক্ষিত বিকল্প পথ',
+      slope: 'পাহাৰীয়া ঢাল',
+      roadStatus: 'ৰাজপথৰ স্থিতি',
+      safeRoute: 'পৰামৰ্শ দিয়া বিকল্প সুৰক্ষিত পথ (ক্ষেত্ৰভিত্তিক তথ্য সাপেক্ষে)',
       estTime: 'আনুমানিক নিষ্কাষণ সময়',
-      sirenOn: 'চাইৰেন বন্ধ কৰক',
-      sirenOff: 'চাইৰেন পৰীক্ষা',
-      voiceBtn: 'ভইচ সতৰ্কবাৰ্তা',
-      stopVoiceBtn: 'ভইচ বন্ধ কৰক',
+      sirenOn: '🔇 চাইৰেন বন্ধ কৰক',
+      sirenOff: '🔊 চাইৰেন পৰীক্ষা',
+      voiceBtn: '🗣️ ভইচ সতৰ্কবাৰ্তা',
+      stopVoiceBtn: '⏹️ ভইচ বন্ধ কৰক',
       survivalGuide: 'জৰুৰীকালীন সুৰক্ষা নিৰ্দেশনা',
-      reportBtn: 'এআই ফটো ৰিপোৰ্ট',
-      cmdMapBtn: 'জিআইএছ মেপ',
-      tabOverview: 'অৱলোকন',
-      tab3d: '৩ডি পাহাৰ',
-      tabShelters: 'আশ্ৰয় শিবিৰ',
-      tabAgent: 'এআই অগ্ৰাধিকাৰ',
-      tabSos: 'অফলাইন এছঅ’এছ',
-      footerStay: 'সতৰ্ক থাকক। সুৰক্ষিত থাকক।'
+      reportBtn: '📸 এআই ফটো ৰিপোৰ্ট',
+      cmdMapBtn: '🛰️ জিআইএছ মেপ',
+      tabOverview: '📊 অৱলোকন',
+      tab3d: '⛰️ ৩ডি পাহাৰ',
+      tabShelters: '🏥 আশ্ৰয় শিবিৰ',
+      tabSos: '📴 অফলাইন এছঅ’এছ'
     }
   }[lang];
 
-  const isRed   = data?.assessment.level === 'RED';
-  const isAmber = data?.assessment.level === 'AMBER';
+  const isRed   = data?.assessment?.level === 'RED';
+  const isAmber = data?.assessment?.level === 'AMBER';
+
+  const bg   = theme === 'dark' ? '#0b1329' : '#f8fafc';
+  const fg   = theme === 'dark' ? '#f1f5f9' : '#0f172a';
+  const card = theme === 'dark' ? '#0f172a' : '#ffffff';
+  const brd  = theme === 'dark' ? '#1e293b' : '#e2e8f0';
+  const muted= theme === 'dark' ? '#94a3b8' : '#64748b';
 
   return (
-    <div style={{
-      minHeight: '100vh',
-      background: "linear-gradient(180deg, rgba(6, 10, 18, 0.28) 0%, rgba(8, 12, 22, 0.45) 100%), url('/landslide_bg.jpg') center/cover fixed no-repeat",
-      color: '#f8fafc',
-      fontFamily: 'Inter, -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif'
-    }}>
+    <div
+      style={{
+        minHeight: '100vh',
+        background: theme === 'dark'
+          ? "linear-gradient(180deg, rgba(7, 11, 20, 0.72) 0%, rgba(10, 16, 32, 0.88) 100%), url('/landslide_bg.jpg') center/cover fixed no-repeat"
+          : '#f8fafc',
+        color: fg,
+        fontFamily: 'Inter, system-ui, sans-serif',
+        display: 'flex',
+        flexDirection: 'column',
+      }}
+    >
 
-      {/* ── Top Warning Banner (Exact Match to Mockup) ── */}
-      {isRed ? (
-        <div style={{
-          background: '#dc2626', color: '#ffffff',
-          padding: '9px 16px', textAlign: 'center',
-          fontSize: '0.84rem', fontWeight: 800, letterSpacing: '0.04em',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-          boxShadow: '0 2px 12px rgba(220, 38, 38, 0.5)'
-        }}>
-          <span>⚠️ ⚠️</span>
-          <span>CRITICAL LANDSLIDE ALERT - {selectedZone.name.toUpperCase()} - IMMEDIATE EVACUATION REQUIRED</span>
-          <span>⚠️ ⚠️</span>
-        </div>
-      ) : isAmber ? (
-        <div style={{
-          background: '#d97706', color: '#ffffff',
-          padding: '9px 16px', textAlign: 'center',
-          fontSize: '0.84rem', fontWeight: 800, letterSpacing: '0.04em',
-          display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px'
-        }}>
-          <span>⚠️</span>
-          <span>ELEVATED LANDSLIDE ADVISORY - {selectedZone.name.toUpperCase()} - PREPARE FOR EVACUATION</span>
-          <span>⚠️</span>
-        </div>
-      ) : null}
+      {/* ── Offline Status Banner & Sync Controls ── */}
+      <OfflineStatusHeader />
 
-      {/* ── SATARK Navbar (Dark Glassmorphic) ── */}
+      {/* ── RED alert pulsing top bar ── */}
+      {isRed && (
+        <div style={{
+          background: 'linear-gradient(90deg, #991b1b, #ef4444, #991b1b)',
+          backgroundSize: '200% 100%',
+          animation: 'redSlide 2s linear infinite',
+          padding: '8px 24px', textAlign: 'center',
+          fontSize: '0.85rem', fontWeight: 800, color: '#fff',
+          letterSpacing: '0.05em'
+        }}>
+          🚨 CRITICAL LANDSLIDE ALERT — {selectedZone.name} — IMMEDIATE EVACUATION REQUIRED 🚨
+          <style>{`
+            @keyframes redSlide { 0%{background-position:0% 50%} 100%{background-position:200% 50%} }
+          `}</style>
+        </div>
+      )}
+
+      {/* ── Top Nav ── */}
       <header style={{
-        background: 'rgba(11, 17, 32, 0.88)',
-        backdropFilter: 'blur(16px)',
-        WebkitBackdropFilter: 'blur(16px)',
-        borderBottom: '1px solid rgba(255, 255, 255, 0.08)',
+        background: theme === 'dark' ? 'rgba(15, 23, 42, 0.88)' : 'rgba(255, 255, 255, 0.95)',
+        backdropFilter: 'blur(12px)',
+        WebkitBackdropFilter: 'blur(12px)',
+        borderBottom: `1px solid ${brd}`,
         padding: '12px 24px',
         display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        flexWrap: 'wrap', gap: '12px',
-        position: 'sticky', top: 0, zIndex: 40
+        position: 'sticky', top: 0, zIndex: 50, flexWrap: 'wrap', gap: '12px'
       }}>
-        {/* SATARK Brand Logo */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '14px' }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: '12px' }}>
           <img
             src="/satark_logo.png"
             alt="SATARK Logo"
             style={{
-              width: '46px', height: '46px',
-              borderRadius: '10px', objectFit: 'contain',
-              background: '#ffffff', padding: '2px',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.4)'
+              width: '42px',
+              height: '42px',
+              borderRadius: '10px',
+              objectFit: 'contain',
+              background: '#ffffff',
+              padding: '2px',
+              boxShadow: '0 2px 10px rgba(0, 0, 0, 0.4)',
+              flexShrink: 0,
             }}
           />
           <div>
-            <div style={{ fontWeight: 900, fontSize: '1.25rem', color: '#ffffff', letterSpacing: '0.04em', lineHeight: 1.1 }}>
-              {t.brandName}
+            <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+              <span style={{ fontWeight: 900, fontSize: '1.25rem', letterSpacing: '0.04em', color: theme === 'dark' ? '#f8fafc' : '#0f172a' }}>
+                SATARK
+              </span>
+              <span
+                style={{
+                  background: theme === 'dark' ? 'rgba(56, 189, 248, 0.15)' : 'rgba(2, 132, 199, 0.12)',
+                  color: theme === 'dark' ? '#38bdf8' : '#0369a1',
+                  border: theme === 'dark' ? '1px solid rgba(56, 189, 248, 0.35)' : '1px solid rgba(2, 132, 199, 0.35)',
+                  borderRadius: '6px',
+                  padding: '1px 8px',
+                  fontSize: '0.72rem',
+                  fontWeight: 800,
+                  letterSpacing: '0.02em',
+                }}
+              >
+                Citizen Safety
+              </span>
             </div>
-            <div style={{ fontSize: '0.82rem', color: '#e2e8f0', fontWeight: 600 }}>
-              {t.tagline}
-            </div>
-            <div style={{ fontSize: '0.68rem', color: '#94a3b8' }}>
-              {t.subtag}
+            <div style={{ fontSize: '0.72rem', color: muted, marginTop: '2px', letterSpacing: '0.01em' }}>
+              National Early Warning Network {userLocation ? `· 📍 ${userLocation.detectedZone}` : ''}
             </div>
           </div>
         </div>
 
-        {/* Header Action Controls */}
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
-          {/* Voice Alert Button */}
+        <div style={{ display: 'flex', alignItems: 'center', gap: '8px', flexWrap: 'wrap' }}>
+          {/* Voice Assistant Button */}
           <button
-            onClick={() => isSpeaking ? stopSpeaking() : speakAlert(selectedZone.name, data?.assessment.level || 'GREEN', data?.assessment.action_protocol || '')}
+            onClick={() => isSpeaking ? stopSpeaking() : speakAlert(selectedZone.name, data?.assessment?.level || 'GREEN', data?.assessment?.action_protocol || '')}
             style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              padding: '8px 14px', borderRadius: '8px',
-              border: '1px solid rgba(255, 255, 255, 0.12)',
-              background: isSpeaking ? '#2563eb' : 'rgba(255, 255, 255, 0.06)',
-              color: '#ffffff', fontSize: '0.82rem', fontWeight: 600, cursor: 'pointer'
+              padding: '6px 12px', borderRadius: '8px',
+              border: theme === 'dark' ? '1px solid #3b82f640' : '1px solid rgba(37,99,235,0.3)',
+              background: isSpeaking ? '#2563eb' : (theme === 'dark' ? 'rgba(59,130,246,0.15)' : 'rgba(37,99,235,0.10)'),
+              color: isSpeaking ? '#fff' : (theme === 'dark' ? '#60a5fa' : '#1d4ed8'),
+              fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer'
             }}
           >
-            <span>🗣️</span>
-            <span>{isSpeaking ? t.stopVoiceBtn : t.voiceBtn}</span>
+            {isSpeaking ? t.stopVoiceBtn : t.voiceBtn}
           </button>
 
-          {/* Emergency Siren Button */}
+          {/* Siren toggle */}
           <button
             onClick={() => isPlaying ? stopSiren() : playCriticalSiren()}
             style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              padding: '8px 16px', borderRadius: '8px', border: 'none',
-              background: '#dc2626', color: '#ffffff',
-              fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer',
-              boxShadow: '0 2px 10px rgba(220, 38, 38, 0.4)',
+              padding: '6px 12px', borderRadius: '8px',
+              border: theme === 'dark' ? 'none' : '1px solid rgba(220,38,38,0.3)',
+              background: isPlaying ? '#dc2626' : (theme === 'dark' ? 'rgba(239,68,68,0.15)' : 'rgba(220,38,38,0.10)'),
+              color: isPlaying ? '#fff' : (theme === 'dark' ? '#ef4444' : '#b91c1c'),
+              fontSize: '0.8rem', fontWeight: 700, cursor: 'pointer',
               animation: isPlaying ? 'pulse 1s infinite' : 'none'
             }}
           >
-            <span>🔔</span>
-            <span>{isPlaying ? t.sirenOn : t.sirenOff}</span>
+            {isPlaying ? t.sirenOn : t.sirenOff}
           </button>
 
-          {/* Language Switcher Pill */}
-          <div style={{
-            display: 'flex', background: 'rgba(255, 255, 255, 0.06)',
-            borderRadius: '8px', padding: '3px', border: '1px solid rgba(255, 255, 255, 0.1)'
-          }}>
+          {/* Language toggle */}
+          <div style={{ display: 'flex', background: theme === 'dark' ? '#1e293b' : '#e2e8f0', borderRadius: '20px', padding: '2px' }}>
             {(['en', 'hi', 'as'] as const).map(l => (
-              <button
-                key={l}
-                onClick={() => setLang(l)}
-                style={{
-                  padding: '4px 10px', borderRadius: '6px', border: 'none',
-                  background: lang === l ? '#2563eb' : 'transparent',
-                  color: '#ffffff', fontSize: '0.78rem', fontWeight: 700, cursor: 'pointer'
-                }}
-              >
-                {l.toUpperCase()}
-              </button>
+              <button key={l} onClick={() => setLang(l)} style={{
+                padding: '4px 10px', borderRadius: '16px', border: 'none',
+                background: lang === l ? '#2563eb' : 'transparent',
+                color: lang === l ? '#fff' : (theme === 'dark' ? '#94a3b8' : '#475569'),
+                fontSize: '0.75rem', fontWeight: 600, cursor: 'pointer'
+              }}>{l.toUpperCase()}</button>
             ))}
           </div>
 
-          {/* Officer Portal Button */}
-          <button
-            onClick={() => navigate('/login')}
-            style={{
-              display: 'flex', alignItems: 'center', gap: '6px',
-              background: '#2563eb', color: '#ffffff', border: 'none',
-              borderRadius: '8px', padding: '8px 14px', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(37, 99, 235, 0.35)'
-            }}
-          >
-            <span>👤</span>
-            <span>Officer ▾</span>
+          {/* Theme toggle */}
+          <button onClick={() => setTheme(th => th === 'dark' ? 'light' : 'dark')}
+            style={{ background: theme === 'dark' ? '#1e293b' : '#e2e8f0', border: 'none', borderRadius: '20px', padding: '6px 12px', cursor: 'pointer', fontSize: '0.85rem' }}>
+            {theme === 'dark' ? '🌙' : '☀️'}
+          </button>
+
+          {/* Profile Menu / Sign In */}
+          {isAuth ? (
+            <div style={{ position: 'relative' }}>
+              <button
+                onClick={() => setProfileMenuOpen(o => !o)}
+                style={{
+                  background: profileMenuOpen ? '#2563eb' : (theme === 'dark' ? 'rgba(37, 99, 235, 0.15)' : 'rgba(37, 99, 235, 0.10)'),
+                  color: profileMenuOpen ? '#fff' : (theme === 'dark' ? '#60a5fa' : '#1d4ed8'),
+                  border: theme === 'dark' ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid rgba(37, 99, 235, 0.35)',
+                  borderRadius: '8px',
+                  padding: '6px 12px',
+                  fontSize: '0.82rem',
+                  fontWeight: 700,
+                  cursor: 'pointer',
+                  display: 'flex',
+                  alignItems: 'center',
+                  gap: '6px',
+                }}
+              >
+                <span>👤</span>
+                <span>{citizenProfile?.fullName?.split(' ')[0] || 'Profile'}</span>
+                <span style={{ fontSize: '0.65rem' }}>{profileMenuOpen ? '▲' : '▼'}</span>
+              </button>
+
+              {profileMenuOpen && (
+                <div
+                  style={{
+                    position: 'absolute',
+                    right: 0,
+                    top: '110%',
+                    background: card,
+                    border: `1px solid ${brd}`,
+                    borderRadius: '10px',
+                    padding: '6px',
+                    width: '170px',
+                    boxShadow: theme === 'dark' ? '0 8px 24px rgba(0,0,0,0.5)' : '0 8px 24px rgba(0,0,0,0.12)',
+                    zIndex: 100,
+                    display: 'flex',
+                    flexDirection: 'column',
+                    gap: '4px',
+                  }}
+                >
+                  <button
+                    onClick={() => { setProfileMenuOpen(false); navigate('/profile'); }}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: fg,
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      textAlign: 'left',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <span>👤</span> My Profile
+                  </button>
+
+                  <button
+                    onClick={() => { setProfileMenuOpen(false); navigate('/privacy'); }}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: theme === 'dark' ? '#94a3b8' : '#475569',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      textAlign: 'left',
+                      fontSize: '0.82rem',
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <span>🛡️</span> Privacy &amp; Data
+                  </button>
+
+                  <div style={{ borderTop: `1px solid ${brd}`, margin: '4px 0' }} />
+
+                  <button
+                    onClick={async () => {
+                      setProfileMenuOpen(false);
+                      await logoutCitizen();
+                      navigate('/login');
+                    }}
+                    style={{
+                      background: 'transparent',
+                      border: 'none',
+                      color: theme === 'dark' ? '#f87171' : '#dc2626',
+                      padding: '8px 12px',
+                      borderRadius: '6px',
+                      textAlign: 'left',
+                      fontSize: '0.82rem',
+                      fontWeight: 700,
+                      cursor: 'pointer',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: '8px',
+                    }}
+                  >
+                    <span>🚪</span> Sign Out
+                  </button>
+                </div>
+              )}
+            </div>
+          ) : (
+            <button
+              onClick={() => navigate('/login')}
+              style={{
+                background: theme === 'dark' ? 'rgba(37, 99, 235, 0.15)' : 'rgba(37, 99, 235, 0.10)',
+                color: theme === 'dark' ? '#60a5fa' : '#1d4ed8',
+                border: theme === 'dark' ? '1px solid rgba(59, 130, 246, 0.4)' : '1px solid rgba(37, 99, 235, 0.35)',
+                borderRadius: '8px',
+                padding: '6px 12px',
+                fontSize: '0.82rem',
+                fontWeight: 700,
+                cursor: 'pointer',
+                display: 'flex',
+                alignItems: 'center',
+                gap: '6px',
+              }}
+            >
+              <span>👤</span> Sign In
+            </button>
+          )}
+
+          {/* Officer Portal */}
+          <button onClick={() => navigate('/login')}
+            style={{ background: '#2563eb', color: '#fff', border: 'none', borderRadius: '8px', padding: '7px 14px', fontSize: '0.82rem', fontWeight: 700, cursor: 'pointer' }}>
+            🔒 Officer
           </button>
         </div>
       </header>
 
       {/* ── Main Container ── */}
-      <main style={{ maxWidth: '1100px', margin: '0 auto', padding: '24px 16px' }}>
+      <main style={{ flex: 1, maxWidth: '1100px', width: '100%', margin: '0 auto', padding: '24px 16px' }}>
 
-        {/* Hero Section */}
-        <div style={{ textAlign: 'center', marginBottom: '24px' }}>
+        {/* Hero */}
+        <div style={{ marginBottom: '20px', textAlign: 'center' }}>
           <div style={{
             display: 'inline-flex', alignItems: 'center', gap: '6px',
-            background: 'rgba(16, 185, 129, 0.15)', border: '1px solid rgba(16, 185, 129, 0.4)',
-            color: '#34d399', padding: '5px 14px', borderRadius: '9999px',
-            fontSize: '0.75rem', fontWeight: 700, marginBottom: '12px'
+            background: theme === 'dark' ? 'rgba(34,197,94,0.15)' : 'rgba(22, 163, 74, 0.12)',
+            border: theme === 'dark' ? '1px solid #22c55e' : '1px solid #16a34a',
+            color: theme === 'dark' ? '#4ade80' : '#15803d', padding: '4px 12px', borderRadius: '20px',
+            fontSize: '0.75rem', fontWeight: 700, marginBottom: '10px'
           }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#10b981' }} />
-            <span>{t.liveBadge}</span>
+            <span style={{ width: 8, height: 8, borderRadius: '50%', background: theme === 'dark' ? '#22c55e' : '#16a34a', display: 'inline-block' }} />
+            {t.liveBadge}
           </div>
-
-          <h1 style={{
-            fontSize: '2.4rem', fontWeight: 900, color: '#ffffff',
-            margin: '0 0 8px 0', letterSpacing: '-0.03em', textShadow: '0 2px 10px rgba(0,0,0,0.6)'
-          }}>
-            {t.title}
-          </h1>
-          <p style={{ fontSize: '0.96rem', color: '#cbd5e1', margin: 0, fontWeight: 500 }}>
-            {t.subtitle}
-          </p>
+          <h1 style={{ fontSize: '1.8rem', fontWeight: 800, margin: '0 0 6px 0', letterSpacing: '-0.03em', color: fg }}>{t.title}</h1>
+          <p style={{ color: theme === 'dark' ? '#94a3b8' : '#475569', fontSize: '0.92rem', margin: 0 }}>{t.subtitle}</p>
         </div>
 
-        {/* ── Segmented Pill Tab Bar (Translucent Glass) ── */}
-        <div style={{
-          background: 'rgba(15, 23, 42, 0.75)',
-          border: '1px solid rgba(255, 255, 255, 0.1)',
-          backdropFilter: 'blur(12px)',
-          WebkitBackdropFilter: 'blur(12px)',
-          borderRadius: '9999px',
-          padding: '6px 10px',
-          display: 'flex',
-          justifyContent: 'center',
-          gap: '6px',
-          marginBottom: '24px',
-          boxShadow: '0 4px 20px rgba(0,0,0,0.3)',
-          overflowX: 'auto'
-        }}>
+        {/* ── Complete Citizen Offline Rescue Mode (6 Interactive Workflows & Beacon) ── */}
+        <OfflineRescueMode
+          defaultLat={userLocation?.lat || selectedZone.lat}
+          defaultLng={userLocation?.lon || selectedZone.lon}
+          onNavigateTab={(tab) => setActiveTab(tab as any)}
+          theme={theme}
+        />
+
+        {/* Navigation Tabs (5 Features) */}
+        <div style={{ display: 'flex', gap: '8px', marginBottom: '20px', borderBottom: `1px solid ${brd}`, overflowX: 'auto', paddingBottom: '2px' }}>
           {[
-            { id: 'overview', icon: '📊', label: t.tabOverview },
-            { id: '3d_terrain', icon: '⛰️', label: t.tab3d },
-            { id: 'shelters', icon: '🏥', label: t.tabShelters },
-            { id: 'ai_agent', icon: '🤖', label: t.tabAgent },
-            { id: 'offline_sos', icon: '📴', label: t.tabSos }
-          ].map(tab => {
-            const isActive = activeTab === tab.id;
-            return (
-              <button
-                key={tab.id}
-                onClick={() => setActiveTab(tab.id as any)}
-                style={{
-                  display: 'flex', alignItems: 'center', gap: '6px',
-                  padding: '8px 18px', borderRadius: '9999px', border: 'none',
-                  background: isActive ? '#2563eb' : 'transparent',
-                  color: isActive ? '#ffffff' : '#94a3b8',
-                  fontWeight: isActive ? 700 : 600, fontSize: '0.84rem',
-                  cursor: 'pointer', whiteSpace: 'nowrap',
-                  transition: 'all 0.15s ease'
-                }}
-              >
-                <span>{tab.icon}</span>
-                <span>{tab.label}</span>
-              </button>
-            );
-          })}
+            { id: 'overview', label: t.tabOverview },
+            { id: '3d_terrain', label: t.tab3d },
+            { id: 'shelters', label: t.tabShelters },
+            { id: 'offline_sos', label: t.tabSos }
+          ].map(tab => (
+            <button
+              key={tab.id}
+              onClick={() => setActiveTab(tab.id as any)}
+              style={{
+                padding: '10px 16px', border: 'none', cursor: 'pointer',
+                background: 'transparent', fontWeight: 700, fontSize: '0.86rem',
+                color: activeTab === tab.id ? '#2563eb' : (theme === 'dark' ? '#94a3b8' : '#64748b'),
+                borderBottom: activeTab === tab.id ? '2px solid #2563eb' : '2px solid transparent',
+                whiteSpace: 'nowrap', transition: 'all 0.15s'
+              }}
+            >
+              {tab.label}
+            </button>
+          ))}
         </div>
 
-        {/* ── TAB 1: OVERVIEW ── */}
+        {/* Tab 1: Overview */}
         {activeTab === 'overview' && (
-          <div>
-            {/* Zone Selector Box */}
-            <div style={{ marginBottom: '16px' }}>
-              <label style={{ fontSize: '0.72rem', fontWeight: 800, color: '#94a3b8', letterSpacing: '0.05em', textTransform: 'uppercase', display: 'block', marginBottom: '6px' }}>
-                {t.location}
-              </label>
-              <div style={{ position: 'relative', width: '100%' }}>
-                <select
-                  value={selectedZone.name}
+          <>
+            {/* Zone Selector */}
+            <div style={{
+              background: card, border: `1px solid ${brd}`, borderRadius: '12px',
+              padding: '16px', marginBottom: '20px',
+              display: 'flex', flexWrap: 'wrap', alignItems: 'center', justifyContent: 'space-between', gap: '12px'
+            }}>
+              <div>
+                <label style={{ fontSize: '0.72rem', textTransform: 'uppercase', letterSpacing: '0.05em', color: theme === 'dark' ? '#94a3b8' : '#475569', fontWeight: 700, display: 'block', marginBottom: '6px' }}>
+                  📍 {t.location} {userLocation && <span style={{ color: theme === 'dark' ? '#22c55e' : '#15803d', marginLeft: '6px' }}>● GPS Auto-Detected</span>}
+                </label>
+                <select value={selectedZone.name}
                   onChange={e => { const z = ZONES.find(x => x.name === e.target.value); if (z) setSelectedZone(z); }}
                   style={{
-                    width: '100%', padding: '12px 18px', borderRadius: '12px',
-                    background: 'rgba(15, 23, 42, 0.85)', color: '#f8fafc',
-                    border: '1px solid rgba(255, 255, 255, 0.12)',
-                    backdropFilter: 'blur(10px)',
-                    fontSize: '0.95rem', fontWeight: 700, cursor: 'pointer',
-                    appearance: 'none', outline: 'none'
-                  }}
-                >
-                  {ZONES.map(z => <option key={z.name} value={z.name} style={{ background: '#0f172a', color: '#fff' }}>📍 {z.name}</option>)}
+                    padding: '8px 14px', borderRadius: '8px',
+                    background: theme === 'dark' ? '#1e293b' : '#f1f5f9',
+                    color: fg, border: `1px solid ${brd}`,
+                    fontSize: '0.9rem', fontWeight: 600, cursor: 'pointer'
+                  }}>
+                  {ZONES.map(z => <option key={z.name} value={z.name}>{z.name}</option>)}
                 </select>
-                <div style={{ position: 'absolute', right: '16px', top: '50%', transform: 'translateY(-50%)', pointerEvents: 'none', color: '#94a3b8' }}>
-                  ▼
-                </div>
+              </div>
+              <div style={{ display: 'flex', gap: '10px', flexWrap: 'wrap' }}>
+                <button onClick={() => navigate('/sih-dashboard')}
+                  style={{ background: 'linear-gradient(135deg, #0284c7, #2563eb)', color: '#fff', border: 'none', borderRadius: '8px', padding: '10px 18px', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer' }}>
+                  {t.cmdMapBtn}
+                </button>
+                <button onClick={() => navigate('/report')}
+                  style={{ background: '#16a34a', color: '#fff', border: 'none', borderRadius: '8px', padding: '10px 18px', fontSize: '0.85rem', fontWeight: 700, cursor: 'pointer' }}>
+                  {t.reportBtn}
+                </button>
               </div>
             </div>
 
-            {/* Action Buttons (Side by Side) */}
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '12px', marginBottom: '24px' }}>
-              <button
-                onClick={() => navigate('/sih-dashboard')}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  padding: '12px 20px', borderRadius: '10px', border: 'none',
-                  background: '#1d4ed8', color: '#ffffff',
-                  fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer',
-                  boxShadow: '0 4px 14px rgba(29, 78, 216, 0.4)'
-                }}
-              >
-                <span>🛰️</span>
-                <span>{t.cmdMapBtn}</span>
-              </button>
-
-              <button
-                onClick={() => navigate('/report')}
-                style={{
-                  display: 'flex', alignItems: 'center', justifyContent: 'center', gap: '8px',
-                  padding: '12px 20px', borderRadius: '10px', border: 'none',
-                  background: '#059669', color: '#ffffff',
-                  fontSize: '0.9rem', fontWeight: 700, cursor: 'pointer',
-                  boxShadow: '0 4px 14px rgba(5, 150, 105, 0.4)'
-                }}
-              >
-                <span>📸</span>
-                <span>{t.reportBtn}</span>
-              </button>
-            </div>
-
-            {/* ── AI Risk Assessment Card (Matching Mockup with Logo Icon) ── */}
+            {/* AI Risk Banner */}
             <div style={{
-              background: 'rgba(24, 12, 18, 0.85)',
-              border: '1px solid rgba(239, 68, 68, 0.35)',
-              backdropFilter: 'blur(16px)',
-              WebkitBackdropFilter: 'blur(16px)',
-              borderRadius: '16px',
-              padding: '24px',
-              marginBottom: '24px',
-              boxShadow: '0 8px 30px rgba(0,0,0,0.4)'
+              background: isRed ? (theme === 'dark' ? 'linear-gradient(135deg,rgba(239,68,68,0.25),rgba(185,28,28,0.15))' : 'linear-gradient(135deg,#fee2e2,#fecaca)') :
+                          isAmber ? (theme === 'dark' ? 'linear-gradient(135deg,rgba(245,158,11,0.25),rgba(217,119,6,0.15))' : 'linear-gradient(135deg,#fef3c7,#fde68a)') :
+                          (theme === 'dark' ? 'linear-gradient(135deg,rgba(34,197,94,0.25),rgba(21,128,61,0.15))' : 'linear-gradient(135deg,#dcfce7,#bbf7d0)'),
+              border: `2px solid ${isRed ? '#ef4444' : isAmber ? '#f59e0b' : '#22c55e'}`,
+              borderRadius: '16px', padding: '24px', marginBottom: '24px'
             }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', flexWrap: 'wrap', gap: '14px', marginBottom: '12px' }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: '16px' }}>
-                  {/* Circular Hazard Icon Badge */}
-                  <div style={{
-                    width: '64px', height: '64px', borderRadius: '50%',
-                    background: 'radial-gradient(circle, #7f1d1d 0%, #450a0a 100%)',
-                    border: '2px solid rgba(239, 68, 68, 0.5)',
-                    display: 'flex', alignItems: 'center', justifyContent: 'center',
-                    boxShadow: '0 0 20px rgba(239, 68, 68, 0.4)', fontSize: '28px'
-                  }}>
-                    🚨
-                  </div>
-                  <div>
-                    <div style={{ fontSize: '0.75rem', fontWeight: 800, color: '#f87171', letterSpacing: '0.05em', textTransform: 'uppercase' }}>
-                      {t.aiScore}
-                    </div>
-                    <div style={{
-                      fontSize: '2.4rem', fontWeight: 900,
-                      color: isRed ? '#ef4444' : isAmber ? '#f59e0b' : '#22c55e',
-                      letterSpacing: '-0.03em', marginTop: '2px'
-                    }}>
-                      {loading ? 'ANALYZING...' : `${data?.assessment.level} RISK (${(data?.assessment.score ?? 0.78).toFixed(2)})`}
-                    </div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '12px' }}>
+                <div>
+                  <div style={{ fontSize: '0.8rem', fontWeight: 700, color: theme === 'dark' ? '#94a3b8' : '#334155', textTransform: 'uppercase' }}>{t.aiScore}</div>
+                  <div style={{ fontSize: '2rem', fontWeight: 900, color: isRed ? (theme === 'dark' ? '#ef4444' : '#b91c1c') : isAmber ? (theme === 'dark' ? '#f59e0b' : '#b45309') : (theme === 'dark' ? '#22c55e' : '#15803d'), marginTop: '4px' }}>
+                    {loading ? 'Analyzing…' : `${data?.assessment?.level || 'MODERATE'} RISK (${(data?.assessment?.score ?? 0.42).toFixed(2)})`}
                   </div>
                 </div>
-
                 <div style={{ textAlign: 'right' }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8' }}>Notification Status</div>
-                  <div style={{
-                    display: 'inline-flex', alignItems: 'center', gap: '6px',
-                    background: 'rgba(239, 68, 68, 0.15)', border: '1px solid rgba(239, 68, 68, 0.3)',
-                    color: '#f87171', padding: '4px 12px', borderRadius: '9999px',
-                    fontSize: '0.78rem', fontWeight: 700, marginTop: '4px'
-                  }}>
-                    <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#ef4444' }} />
-                    <span>Notifications Off</span>
+                  <div style={{ fontSize: '0.72rem', color: theme === 'dark' ? '#94a3b8' : '#475569' }}>Notification Status</div>
+                  <div style={{ fontSize: '0.85rem', fontWeight: 700, color: notification === 'granted' ? (theme === 'dark' ? '#4ade80' : '#15803d') : (theme === 'dark' ? '#f59e0b' : '#b45309') }}>
+                    {notification === 'granted' ? '🔔 Alerts Enabled' : '🔕 Notifications Off'}
                   </div>
                 </div>
               </div>
-
-              {/* Inner Protocol Box */}
               <div style={{
-                background: 'rgba(10, 15, 26, 0.7)',
-                border: '1px solid rgba(255, 255, 255, 0.08)',
-                borderRadius: '12px',
-                padding: '14px 18px',
-                marginTop: '10px'
+                marginTop: '16px', padding: '12px 16px',
+                background: theme === 'dark' ? 'rgba(0,0,0,0.25)' : 'rgba(255,255,255,0.85)',
+                border: theme === 'dark' ? '1px solid rgba(255,255,255,0.08)' : '1px solid rgba(0,0,0,0.08)',
+                borderRadius: '8px'
               }}>
-                <div style={{ fontSize: '0.78rem', fontWeight: 800, color: '#f87171' }}>
-                  {t.action}
-                </div>
-                <div style={{ fontSize: '0.98rem', fontWeight: 800, color: '#f8fafc', marginTop: '3px' }}>
-                  {data?.assessment.action_protocol || 'Immediate Evacuation & Highway Closure. High-risk debris flow imminent.'}
+                <div style={{ fontSize: '0.82rem', fontWeight: 700, color: fg }}>{t.action}:</div>
+                <div style={{
+                  fontSize: '1.05rem', fontWeight: 800,
+                  color: isRed ? (theme === 'dark' ? '#fca5a5' : '#991b1b') : isAmber ? (theme === 'dark' ? '#fcd34d' : '#92400e') : (theme === 'dark' ? '#86efac' : '#166534'),
+                  marginTop: '4px'
+                }}>
+                  {data?.assessment?.action_protocol || 'Normal Monitoring Active'}
                 </div>
               </div>
             </div>
 
-            {/* ── 4 Telemetry Metrics Grid (Exact Match to Mockup) ── */}
-            <div style={{
-              display: 'grid',
-              gridTemplateColumns: 'repeat(auto-fit, minmax(220px, 1fr))',
-              gap: '14px',
-              marginBottom: '24px'
-            }}>
+            {/* Telemetry Grid */}
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '24px' }}>
               {[
-                {
-                  label: t.rain24,
-                  value: `${data?.weather.rain_24h_mm ?? 142} mm`,
-                  sub: 'Source: Open-Meteo & OpenWeather',
-                  icon: '🌧️'
-                },
-                {
-                  label: t.rain72,
-                  value: `${data?.weather.rain_72h_mm ?? 285} mm`,
-                  sub: 'Source: 3-Day Antecedent Rain',
-                  icon: '💧'
-                },
-                {
-                  label: t.soil,
-                  value: `${data?.weather.soil_moisture ?? 0.52} m³/m³`,
-                  sub: 'Source: Topsoil 0-10cm Layer',
-                  icon: '%'
-                },
-                {
-                  label: t.elevation,
-                  value: '876.5 m',
-                  sub: 'Source: NASA SRTM 30m DEM',
-                  icon: '⛰️'
-                }
-              ].map((card, idx) => (
-                <div
-                  key={idx}
-                  style={{
-                    background: 'rgba(15, 23, 42, 0.78)',
-                    backdropFilter: 'blur(12px)',
-                    border: '1px solid rgba(255, 255, 255, 0.08)',
-                    borderRadius: '16px',
-                    padding: '18px',
-                    boxShadow: '0 4px 16px rgba(0,0,0,0.25)'
-                  }}
-                >
-                  <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start', marginBottom: '8px' }}>
-                    <div style={{ fontSize: '0.8rem', fontWeight: 600, color: '#94a3b8' }}>
-                      {card.label}
-                    </div>
-                    <div style={{
-                      width: '28px', height: '28px', borderRadius: '50%',
-                      background: 'rgba(37, 99, 235, 0.2)', color: '#60a5fa',
-                      border: '1px solid rgba(37, 99, 235, 0.3)',
-                      display: 'flex', alignItems: 'center', justifyContent: 'center',
-                      fontSize: '13px', fontWeight: 800
-                    }}>
-                      {card.icon}
-                    </div>
-                  </div>
-
-                  <div style={{ fontSize: '2rem', fontWeight: 900, color: '#f8fafc', letterSpacing: '-0.03em' }}>
-                    {card.value}
-                  </div>
-                  <div style={{ fontSize: '0.72rem', color: '#64748b', marginTop: '4px' }}>
-                    {card.sub}
-                  </div>
+                { icon: '🌧️', label: t.rain24, value: `${data?.weather?.rain_24h_mm ?? 142.0} mm`, sub: 'Open-Meteo & OpenWeather', color: (data?.weather?.rain_24h_mm ?? 0) > 100 ? (theme === 'dark' ? '#ef4444' : '#dc2626') : (theme === 'dark' ? '#38bdf8' : '#0284c7') },
+                { icon: '📊', label: t.rain72, value: `${data?.weather?.rain_72h_mm ?? 285.0} mm`, sub: '3-Day Antecedent Rain', color: theme === 'dark' ? '#f8fafc' : '#0f172a' },
+                { icon: '🌱', label: t.soil, value: `${data?.weather?.soil_moisture ?? 0.52} m³/m³`, sub: 'Topsoil 0-1cm Layer', color: theme === 'dark' ? '#f8fafc' : '#0f172a' },
+                { icon: '🛰️', label: t.elevation, value: '876.5 m', sub: 'NASA SRTM 30m DEM', color: theme === 'dark' ? '#38bdf8' : '#0284c7' },
+              ].map(({ icon, label, value, sub, color }) => (
+                <div key={label} style={{ background: card, border: `1px solid ${brd}`, borderRadius: '12px', padding: '16px' }}>
+                  <div style={{ fontSize: '0.75rem', color: theme === 'dark' ? '#94a3b8' : '#475569', fontWeight: 600 }}>{icon} {label}</div>
+                  <div style={{ fontSize: '1.5rem', fontWeight: 800, color, marginTop: '4px' }}>{value}</div>
+                  <div style={{ fontSize: '0.7rem', color: theme === 'dark' ? '#64748b' : '#475569', marginTop: '4px' }}>{sub}</div>
                 </div>
               ))}
             </div>
 
-            {/* ── Highway Corridor Status & Safe Detour Routing ── */}
-            <div style={{
-              background: 'rgba(15, 23, 42, 0.78)',
-              backdropFilter: 'blur(12px)',
-              border: '1px solid rgba(255, 255, 255, 0.08)',
-              borderRadius: '16px',
-              padding: '22px',
-              marginBottom: '24px',
-              boxShadow: '0 4px 16px rgba(0,0,0,0.25)'
-            }}>
-              <h3 style={{
-                margin: '0 0 16px 0', fontSize: '1.05rem', fontWeight: 800, color: '#f8fafc',
-                display: 'flex', alignItems: 'center', gap: '8px'
-              }}>
-                <span>🚗</span>
-                <span>{t.roadStatus}</span>
+            {/* Road Status */}
+            <div style={{ background: card, border: `1px solid ${brd}`, borderRadius: '16px', padding: '24px', marginBottom: '24px' }}>
+              <h3 style={{ margin: '0 0 16px 0', fontSize: '1.1rem', fontWeight: 800, color: theme === 'dark' ? '#4ade80' : '#15803d' }}>
+                🚗 {t.roadStatus} &amp; Safe Detour Routing
               </h3>
-
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(240px, 1fr))', gap: '14px' }}>
-                {/* Corridor 1 */}
-                <div style={{
-                  background: 'rgba(10, 15, 26, 0.65)',
-                  border: '1px solid rgba(239, 68, 68, 0.25)',
-                  borderRadius: '12px', padding: '14px'
-                }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>Highway Corridor Status</div>
-                  <div style={{ color: '#ef4444', fontSize: '0.92rem', fontWeight: 800 }}>
-                    ⛔ NH-766 (BLOCKED)
+                {[
+                  { label: t.roadStatus, value: data?.evacuation_plan?.primary_corridor || 'NH-766 Blocked', color: theme === 'dark' ? '#f87171' : '#b91c1c', prefix: '⛔' },
+                  { label: t.safeRoute, value: data?.evacuation_plan?.safe_evacuation_route || 'Active via SH-59 Bypass', color: theme === 'dark' ? '#4ade80' : '#15803d', prefix: '✅' },
+                  { label: t.estTime, value: `${data?.evacuation_plan?.estimated_evacuation_time_min ?? 42} Minutes`, color: theme === 'dark' ? '#f8fafc' : '#0f172a', prefix: '⏱️' },
+                ].map(({ label, value, color, prefix }) => (
+                  <div key={label} style={{ background: theme === 'dark' ? '#1e293b' : '#f8fafc', border: `1px solid ${brd}`, padding: '14px', borderRadius: '10px' }}>
+                    <div style={{ fontSize: '0.75rem', color: theme === 'dark' ? '#94a3b8' : '#475569' }}>{label}:</div>
+                    <div style={{ fontSize: '0.95rem', fontWeight: 800, color, marginTop: '4px' }}>{prefix} {value}</div>
                   </div>
-                  <div style={{ fontSize: '0.75rem', color: '#f87171', marginTop: '3px' }}>
-                    Landslide Hazard Zone
-                  </div>
-                </div>
-
-                {/* Corridor 2 */}
-                <div style={{
-                  background: 'rgba(10, 15, 26, 0.65)',
-                  border: '1px solid rgba(16, 185, 129, 0.25)',
-                  borderRadius: '12px', padding: '14px'
-                }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>{t.safeRoute}</div>
-                  <div style={{ color: '#10b981', fontSize: '0.92rem', fontWeight: 800 }}>
-                    ✅ Active via SH-59 (Bypass Corridor)
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: '#34d399', marginTop: '3px' }}>
-                    Recommended Safe Route
-                  </div>
-                </div>
-
-                {/* Corridor 3 */}
-                <div style={{
-                  background: 'rgba(10, 15, 26, 0.65)',
-                  border: '1px solid rgba(59, 130, 246, 0.25)',
-                  borderRadius: '12px', padding: '14px'
-                }}>
-                  <div style={{ fontSize: '0.75rem', fontWeight: 600, color: '#94a3b8', marginBottom: '6px' }}>{t.estTime}</div>
-                  <div style={{ color: '#60a5fa', fontSize: '0.92rem', fontWeight: 800 }}>
-                    ⏱️ 42 Minutes
-                  </div>
-                  <div style={{ fontSize: '0.75rem', color: '#93c5fd', marginTop: '3px' }}>
-                    Under Current Conditions
-                  </div>
-                </div>
+                ))}
               </div>
             </div>
-          </div>
+
+            {/* Survival Guide */}
+            <div style={{ background: card, border: `1px solid ${brd}`, borderRadius: '16px', padding: '24px' }}>
+              <h3 style={{ margin: '0 0 12px 0', fontSize: '1.1rem', fontWeight: 800, color: fg }}>🛡️ {t.survivalGuide}</h3>
+              <ul style={{ paddingLeft: '20px', lineHeight: '1.9', color: theme === 'dark' ? '#cbd5e1' : '#1e293b', fontSize: '0.9rem', margin: 0 }}>
+                <li><strong>Muddy water or sudden stream surge</strong> indicates uphill slope failure — move immediately.</li>
+                <li><strong>Do not use NH-766</strong> when blocked. Follow designated SH-59 green bypass on the GIS map.</li>
+                <li><strong>Rumbling sounds or cracking trees</strong> — move perpendicular to slope, not downhill.</li>
+                <li><strong>Emergency Helplines:</strong> National Disaster: <strong>1070</strong> | State Control Room: <strong>1077</strong>.</li>
+              </ul>
+            </div>
+          </>
         )}
 
-        {/* Tab 2: 3D Mountain Simulation */}
+        {/* Tab 2: 3D Mountain & Runoff Simulator */}
         {activeTab === '3d_terrain' && (
           <Terrain3DVisualizer
             zoneName={selectedZone.name}
@@ -674,50 +726,29 @@ export const CitizenPortal: React.FC = () => {
           />
         )}
 
-        {/* Tab 3: Relief Camps */}
+        {/* Tab 3: Safe Relief Camps */}
         {activeTab === 'shelters' && (
-          <ShelterResourcePanel selectedZoneName={selectedZone.name} />
+          <ShelterResourcePanel
+            selectedZoneName={selectedZone.name}
+            userLat={userLocation?.lat || selectedZone.lat}
+            userLon={userLocation?.lon || selectedZone.lon}
+            theme={theme}
+          />
         )}
 
-        {/* Tab 4: AI Priority Agent */}
-        {activeTab === 'ai_agent' && (
-          <AIPriorityPanel />
-        )}
-
-        {/* Tab 5: Offline SOS Mesh */}
+        {/* Tab 4: Offline SOS Mesh */}
         {activeTab === 'offline_sos' && (
-          <OfflineSosMesh userLat={selectedZone.lat} userLon={selectedZone.lon} />
+          <OfflineSosMesh
+            userLat={userLocation?.lat || selectedZone.lat}
+            userLon={userLocation?.lon || selectedZone.lon}
+            theme={theme}
+          />
         )}
       </main>
 
-      {/* ── SATARK Footer (Exact Match to Mockup) ── */}
-      <footer style={{
-        background: 'rgba(8, 12, 22, 0.95)',
-        borderTop: '1px solid rgba(255, 255, 255, 0.08)',
-        padding: '16px 24px',
-        display: 'flex', alignItems: 'center', justifyContent: 'space-between',
-        flexWrap: 'wrap', gap: '10px', fontSize: '0.78rem', color: '#94a3b8'
-      }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '6px' }}>
-          <span>🛡️</span>
-          <strong style={{ color: '#f8fafc' }}>SATARK</strong>
-          <span>| Early Warning. Safe Tomorrow.</span>
-        </div>
-
-        <div style={{ color: '#34d399', fontWeight: 700 }}>
-          {t.footerStay}
-        </div>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          <span>Live Satellite Sync</span>
-          <span style={{
-            display: 'inline-flex', alignItems: 'center', gap: '4px',
-            color: '#4ade80', fontWeight: 700
-          }}>
-            <span style={{ width: 6, height: 6, borderRadius: '50%', background: '#22c55e' }} />
-            System Online
-          </span>
-        </div>
+      {/* Footer */}
+      <footer style={{ textAlign: 'center', padding: '18px', borderTop: `1px solid ${brd}`, fontSize: '0.75rem', color: '#64748b' }}>
+        SIH 2026 AI Landslide Early Warning System · NDMA SACHET · Open-Meteo · NASA SRTM 30m DEM · OpenWeather
       </footer>
 
       <style>{`
@@ -726,5 +757,3 @@ export const CitizenPortal: React.FC = () => {
     </div>
   );
 };
-
-export default CitizenPortal;

@@ -26,3 +26,7 @@ Thumbs.db
 
 # Large binaries (kept locally)
 *.apk
+*.pdf
+*.zip
+New/
+scratch/

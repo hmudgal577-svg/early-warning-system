@@ -1,6 +1,6 @@
 export type Severity = 'LOW' | 'MODERATE' | 'HIGH' | 'CRITICAL';
 export type RoadStatus = 'OPEN' | 'BLOCKED' | 'AT_RISK';
-export type ReportCategory = 'CRACK' | 'SLOPE_MOVEMENT' | 'BLOCKED_ROAD' | 'FLOODING' | 'OTHER';
+export type ReportCategory = 'CRACK' | 'SLOPE_MOVEMENT' | 'BLOCKED_ROAD' | 'FLOODING' | 'OTHER' | 'INJURED_PEOPLE' | 'TRAPPED_CITIZENS';
 export type ReportStatus = 'PENDING' | 'VERIFIED' | 'RESOLVED' | 'DISMISSED';
 
 export interface FactorScore {
@@ -83,6 +83,40 @@ export interface CreateReportPayload {
   category: ReportCategory;
   description?: string;
   reporterType: 'CITIZEN' | 'FIELD_OFFICER';
+  photoUrl?: string | null;
+  clientReportId?: string;
+  photoBlobKey?: string | null;
+  medicalUrgent?: boolean;
+  beaconId?: string;
+}
+
+export type SyncStatus = 'PENDING_SYNC' | 'SYNCING' | 'SYNC_FAILED' | 'SYNCED';
+
+export interface PendingReportItem {
+  id: string;
+  clientReportId: string;
+  payload: CreateReportPayload;
+  timestamp: number;
+  syncStatus: SyncStatus;
+  retryCount: number;
+  lastError?: string;
+}
+
+export interface PendingRoadStatusItem {
+  id: string;
+  regionId: string;
+  roadStatus: RoadStatus;
+  regionName?: string;
+  timestamp: number;
+  syncStatus: SyncStatus;
+  retryCount: number;
+  lastError?: string;
+}
+
+export interface CachedRecord<T> {
+  key: string;
+  data: T;
+  timestamp: number;
 }
 
 // ── SIH 2026 Prototype Specification Types ─────────────────────────────────────
@@ -130,4 +164,53 @@ export interface RiskAssessmentResponse {
   weather: LiveWeatherMetrics;
   assessment: LandslideAssessment;
   evacuation_plan: EvacuationPlan;
+}
+
+// ── Citizen Profile & Auth Types ───────────────────────────────────────────────
+
+export interface CitizenProfile {
+  id: string;
+  userId: string;
+  fullName: string;
+  phone: string;
+  gender?: string;
+  ageGroup?: string;
+  preferredLanguage: string;
+  bloodGroup?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  accessibilityNeeds?: string;
+  createdAt: string;
+  updatedAt: string;
+}
+
+export interface CitizenProfileInput {
+  fullName: string;
+  gender?: string;
+  ageGroup?: string;
+  preferredLanguage?: string;
+  bloodGroup?: string;
+  emergencyContactName?: string;
+  emergencyContactPhone?: string;
+  accessibilityNeeds?: string;
+}
+
+export interface SendOtpResponse {
+  success: boolean;
+  message: string;
+  demoMode: boolean;
+  demoOtp?: string | null;
+  cooldownSeconds: number;
+}
+
+export interface CitizenAuthResponse {
+  token: string;
+  user: {
+    id: string;
+    username: string;
+    phone: string;
+    role: string;
+  };
+  profileExists: boolean;
+  profile?: CitizenProfile | null;
 }

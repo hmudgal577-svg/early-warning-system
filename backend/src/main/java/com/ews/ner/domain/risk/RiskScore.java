@@ -16,14 +16,19 @@ public class RiskScore {
     private BigDecimal computedScore;
     
     @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = "severity_enum")
+    @org.hibernate.annotations.JdbcType(org.hibernate.dialect.PostgreSQLEnumJdbcType.class)
     private Severity severityLevel;
     
     @Column(columnDefinition="jsonb")
+    @org.hibernate.annotations.JdbcTypeCode(org.hibernate.type.SqlTypes.JSON)
     private String contributingFactors;
     
     private BigDecimal mlScore;
     
     @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = "score_source_enum")
+    @org.hibernate.annotations.JdbcType(org.hibernate.dialect.PostgreSQLEnumJdbcType.class)
     private ScoreSource scoreSource;
     
     private OffsetDateTime computedAt;

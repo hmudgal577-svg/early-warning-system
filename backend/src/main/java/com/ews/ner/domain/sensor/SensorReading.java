@@ -13,9 +13,13 @@ public class SensorReading {
     @Id @GeneratedValue(strategy = GenerationType.UUID)
     private UUID id;
     private UUID regionId;
+    @Column(name = "rainfall_mm_24h")
     private BigDecimal rainfallMm24h;
+
+    @Column(name = "rainfall_mm_72h")
     private BigDecimal rainfallMm72h;
     private BigDecimal soilMoisturePct;
+    @Column(name = "temperature_c")
     private BigDecimal temperatureC;
     
     @Builder.Default

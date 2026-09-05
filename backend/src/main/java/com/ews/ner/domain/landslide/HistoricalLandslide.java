@@ -16,6 +16,8 @@ public class HistoricalLandslide {
     private LocalDate eventDate;
     
     @Enumerated(EnumType.STRING)
+    @Column(columnDefinition = "event_severity_enum")
+    @org.hibernate.annotations.JdbcType(org.hibernate.dialect.PostgreSQLEnumJdbcType.class)
     private EventSeverity severity;
     
     private Integer casualties;

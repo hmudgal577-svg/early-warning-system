@@ -21,6 +21,11 @@ public class RiskController {
         return ResponseEntity.ok(riskService.getHeatmap());
     }
     
+    @GetMapping("/regions/{regionId}")
+    public ResponseEntity<com.ews.ner.api.dto.RiskDetailDTO> getRegionDetail(@PathVariable UUID regionId) {
+        return ResponseEntity.ok(riskService.getRegionDetail(regionId));
+    }
+    
     @PostMapping("/recompute")
     public ResponseEntity<Void> recomputeAll() {
         riskService.recomputeAll();

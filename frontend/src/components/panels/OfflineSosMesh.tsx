@@ -1,230 +1,166 @@
-import React, { useState, useEffect, useRef } from 'react';
-import axios from 'axios';
-import { useAlertSound } from '../../hooks/useAlertSound';
+import React, { useState, useEffect } from 'react';
+import {
+  queueReport,
+  generateClientReportId,
+  getPendingReports,
+} from '../../services/offlineStore';
+import { submitReport } from '../../services/api';
+import { CreateReportPayload, PendingReportItem } from '../../types';
 
-export interface SosPacket {
-  id: string;
-  senderName?: string;
-  lat: number;
-  lon: number;
-  casualties: number;
-  urgentMedical: boolean;
-  timestamp: string;
-  hops: number;
-  status: string;
+interface Props {
+  userLat?: number;
+  userLon?: number;
+  theme?: 'light' | 'dark';
 }
 
-const NTFY_TOPIC = 'https://ntfy.sh/satark_mesh_sos_live_2026';
-const RENDER_AI_URL = 'https://ews-ai-engine.onrender.com';
-
-export const OfflineSosMesh: React.FC<{ userLat?: number; userLon?: number }> = ({
+export const OfflineSosMesh: React.FC<Props> = ({
   userLat = 11.5534,
-  userLon = 76.1320
+  userLon = 76.1320,
+  theme = 'dark',
 }) => {
-  const { playWarningBeep } = useAlertSound();
   const [broadcasting, setBroadcasting] = useState<boolean>(false);
-  const [sosHistory, setSosHistory] = useState<SosPacket[]>([]);
   const [peopleCount, setPeopleCount] = useState<number>(1);
   const [medicalUrgent, setMedicalUrgent] = useState<boolean>(false);
-  const [incomingAlert, setIncomingAlert] = useState<SosPacket | null>(null);
-  const seenPacketIds = useRef<Set<string>>(new Set());
+  const [sosLedger, setSosLedger] = useState<Array<{
+    id: string;
+    clientReportId: string;
+    time: string;
+    status: string;
+    people: number;
+    urgent: boolean;
+    lat: number;
+    lon: number;
+  }>>([]);
 
-  // Helper to handle incoming packet
-  const handleIncomingPacket = (packet: SosPacket) => {
-    if (!packet || !packet.id || seenPacketIds.current.has(packet.id)) return;
-    seenPacketIds.current.add(packet.id);
+  const isOnline = navigator.onLine;
 
-    setSosHistory(prev => [packet, ...prev.filter(p => p.id !== packet.id)]);
-    setIncomingAlert(packet);
-
-    // Audio & Vibration alert on receiving phone!
-    try {
-      playWarningBeep();
-      if ('vibrate' in navigator) navigator.vibrate([300, 100, 300, 100, 500]);
-    } catch {}
-
-    // Auto dismiss after 12s
-    setTimeout(() => setIncomingAlert(null), 12000);
-  };
-
-  // ── Live Real-time Cross-Device Synchronization ───────────────────────────
   useEffect(() => {
-    // 1. Live Server-Sent Events (SSE) from global relay
-    let eventSource: EventSource | null = null;
-    try {
-      eventSource = new EventSource(`${NTFY_TOPIC}/sse`);
-      eventSource.onmessage = (event) => {
-        try {
-          const data = JSON.parse(event.data);
-          if (data && data.message) {
-            const parsedPacket: SosPacket = JSON.parse(data.message);
-            handleIncomingPacket(parsedPacket);
-          }
-        } catch {}
-      };
-    } catch {}
-
-    // 2. Fallback Active Polling to Render AI Engine (every 2.5s)
-    const pollInterval = setInterval(async () => {
-      try {
-        const res = await axios.get<SosPacket[]>(`${RENDER_AI_URL}/api/v1/sos/feed`, { timeout: 3000 });
-        if (res.data && Array.isArray(res.data) && res.data.length > 0) {
-          const latest = res.data[0];
-          handleIncomingPacket(latest);
-        }
-      } catch {}
-    }, 2500);
-
-    // 3. BroadcastChannel for same-device multi-tab
-    let channel: BroadcastChannel | null = null;
-    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-      channel = new BroadcastChannel('satark_mesh_p2p_channel');
-      channel.onmessage = (e) => {
-        if (e.data?.packet) handleIncomingPacket(e.data.packet);
-      };
-    }
-
-    return () => {
-      if (eventSource) eventSource.close();
-      if (channel) channel.close();
-      clearInterval(pollInterval);
-    };
+    loadExistingSosReports();
   }, []);
 
-  // ── Dispatch SOS to All Phones ────────────────────────────────────────────
-  const triggerMeshSos = async () => {
-    setBroadcasting(true);
-
-    const newSos: SosPacket = {
-      id: `SOS-${Math.floor(1000 + Math.random() * 9000)}`,
-      lat: userLat,
-      lon: userLon,
-      casualties: peopleCount,
-      urgentMedical: medicalUrgent,
-      timestamp: new Date().toLocaleTimeString(),
-      hops: 1,
-      status: 'BROADCASTING_BLE'
-    };
-
-    // Mark as seen on sending device
-    seenPacketIds.current.add(newSos.id);
-    setSosHistory(prev => [newSos, ...prev]);
-
-    // 1. Post to Global Real-time Relay (Reaches friend's phone in <0.5s!)
+  const loadExistingSosReports = async () => {
     try {
-      await fetch(NTFY_TOPIC, {
-        method: 'POST',
-        headers: { 'Title': `🚨 SATARK EMERGENCY SOS: ${newSos.id}`, 'Priority': 'urgent' },
-        body: JSON.stringify(newSos)
-      });
+      const reports = await getPendingReports();
+      const sosItems = reports
+        .filter(r => r.payload.description?.includes('[OFFLINE SOS BEACON]'))
+        .map(r => ({
+          id: `SOS-${r.clientReportId.slice(-4).toUpperCase()}`,
+          clientReportId: r.clientReportId,
+          time: new Date(r.timestamp).toLocaleTimeString(),
+          status: r.syncStatus === 'SYNCED' ? 'SYNCHRONIZED_TO_COMMAND_CENTER' : 'STORED_LOCALLY_PENDING_GATEWAY',
+          people: 1,
+          urgent: r.payload.medicalUrgent || false,
+          lat: r.payload.geoLat,
+          lon: r.payload.geoLng,
+        }));
+      if (sosItems.length > 0) {
+        setSosLedger(sosItems);
+      }
     } catch {}
-
-    // 2. Post to Render AI Engine backend
-    try {
-      await axios.post(`${RENDER_AI_URL}/api/v1/sos/broadcast`, newSos, { timeout: 3000 });
-    } catch {}
-
-    // 3. Local BroadcastChannel
-    if (typeof window !== 'undefined' && 'BroadcastChannel' in window) {
-      const channel = new BroadcastChannel('satark_mesh_p2p_channel');
-      channel.postMessage({ type: 'NEW_SOS_BROADCAST', packet: newSos });
-      channel.close();
-    }
-
-    // Multi-hop progression animation
-    setTimeout(() => {
-      setSosHistory(prev =>
-        prev.map(item => item.id === newSos.id ? { ...item, hops: 2, status: 'RELAYED_NEIGHBOR_DEVICE' } : item)
-      );
-    }, 1200);
-
-    setTimeout(() => {
-      setSosHistory(prev =>
-        prev.map(item => item.id === newSos.id ? { ...item, hops: 3, status: 'DELIVERED_NDRF_SATELLITE_HUB' } : item)
-      );
-      setBroadcasting(false);
-    }, 3000);
   };
 
-  return (
-    <div style={{
-      background: 'rgba(15, 23, 42, 0.85)',
-      border: '1px solid rgba(255, 255, 255, 0.1)',
-      backdropFilter: 'blur(16px)',
-      WebkitBackdropFilter: 'blur(16px)',
-      borderRadius: '16px',
-      padding: '24px',
-      marginBottom: '24px',
-      boxShadow: '0 8px 32px rgba(0,0,0,0.3)'
-    }}>
-      {/* 🚨 LIVE INCOMING SOS POPUP ON RECEIVING FRIEND'S PHONE */}
-      {incomingAlert && (
-        <div style={{
-          background: 'linear-gradient(135deg, #dc2626, #991b1b)',
-          color: '#ffffff',
-          borderRadius: '12px',
-          padding: '18px',
-          marginBottom: '20px',
-          boxShadow: '0 0 30px rgba(220, 38, 38, 0.8)',
-          border: '2px solid #fecaca',
-          display: 'flex',
-          justifyContent: 'space-between',
-          alignItems: 'center',
-          flexWrap: 'wrap',
-          gap: '12px'
-        }}>
-          <div>
-            <div style={{ fontSize: '0.82rem', fontWeight: 900, letterSpacing: '0.05em', color: '#fef08a' }}>
-              🚨 LIVE INCOMING EMERGENCY SOS RECEIVED!
-            </div>
-            <div style={{ fontSize: '1.2rem', fontWeight: 900, marginTop: '2px' }}>
-              Packet: <strong>{incomingAlert.id}</strong> &bull; GPS: {incomingAlert.lat.toFixed(4)}, {incomingAlert.lon.toFixed(4)}
-            </div>
-            <div style={{ fontSize: '0.86rem', marginTop: '4px', color: '#f8fafc' }}>
-              👥 Casualties: <strong>{incomingAlert.casualties} Person(s)</strong> {incomingAlert.urgentMedical && '• 🚨 Urgent Medical Attention Required!'} ({incomingAlert.timestamp})
-            </div>
-          </div>
-          <button
-            onClick={() => setIncomingAlert(null)}
-            style={{
-              background: '#ffffff', color: '#dc2626', border: 'none',
-              borderRadius: '8px', padding: '8px 18px', fontSize: '0.85rem', fontWeight: 900, cursor: 'pointer',
-              boxShadow: '0 2px 8px rgba(0,0,0,0.3)'
-            }}
-          >
-            DISMISS ALERT
-          </button>
-        </div>
-      )}
+  const triggerMeshSos = async () => {
+    setBroadcasting(true);
+    const clientReportId = generateClientReportId();
+    const sosId = `SOS-${clientReportId.slice(-4).toUpperCase()}`;
 
-      {/* Header */}
+    const desc = `[OFFLINE SOS BEACON] Persons requiring evacuation: ${peopleCount}. Urgent medical assistance: ${medicalUrgent ? 'YES' : 'NO'}. Dispatched from Lat ${userLat.toFixed(4)}, Lon ${userLon.toFixed(4)}.`;
+
+    const payload: CreateReportPayload = {
+      geoLat: userLat,
+      geoLng: userLon,
+      category: medicalUrgent ? 'INJURED_PEOPLE' : 'TRAPPED_CITIZENS',
+      description: desc,
+      reporterType: 'CITIZEN',
+      medicalUrgent,
+      clientReportId,
+      photoUrl: null,
+    };
+
+    let finalStatus = 'STORED_LOCALLY_PENDING_GATEWAY';
+
+    try {
+      if (navigator.onLine) {
+        await submitReport(payload);
+        finalStatus = 'SYNCHRONIZED_TO_COMMAND_CENTER';
+      } else {
+        await queueReport(payload);
+        finalStatus = 'STORED_LOCALLY_PENDING_GATEWAY';
+      }
+    } catch {
+      await queueReport(payload);
+      finalStatus = 'STORED_LOCALLY_PENDING_GATEWAY';
+    }
+
+    const newRecord = {
+      id: sosId,
+      clientReportId,
+      time: new Date().toLocaleTimeString(),
+      status: finalStatus,
+      people: peopleCount,
+      urgent: medicalUrgent,
+      lat: userLat,
+      lon: userLon,
+    };
+
+    setSosLedger(prev => [newRecord, ...prev]);
+    setBroadcasting(false);
+  };
+
+  const isLight = theme === 'light';
+  const cardBg = isLight ? '#ffffff' : '#0f172a';
+  const brd = isLight ? '#e2e8f0' : '#1e293b';
+  const itemBrd = isLight ? '#e2e8f0' : '#334155';
+  const itemBg = isLight ? '#f8fafc' : '#1e293b';
+  const fg = isLight ? '#0f172a' : '#f8fafc';
+  const muted = isLight ? '#475569' : '#94a3b8';
+
+  return (
+    <div style={{ background: cardBg, border: `1px solid ${brd}`, borderRadius: '16px', padding: '24px', marginBottom: '24px' }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '16px', flexWrap: 'wrap', gap: '10px' }}>
         <div>
-          <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: '#f8fafc', display: 'flex', alignItems: 'center', gap: '8px' }}>
-            <span>📴</span> Offline BLE Mesh SOS Emergency Broadcast
+          <h3 style={{ margin: 0, fontSize: '1.2rem', fontWeight: 800, color: fg, display: 'flex', alignItems: 'center', gap: '8px' }}>
+            <span>📴</span> Offline SOS Emergency Beacon &amp; Local Queue
           </h3>
-          <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: '#94a3b8' }}>
-            Real-time multi-device peer-to-peer relay (Transmits live across all open phones).
+          <p style={{ margin: '4px 0 0 0', fontSize: '0.8rem', color: muted }}>
+            Zero-Internet emergency distress beacon with persistent IndexedDB queue &amp; auto-gateway synchronization.
           </p>
         </div>
         <span style={{
-          background: 'rgba(34, 197, 94, 0.15)', border: '1px solid #22c55e',
-          color: '#4ade80', padding: '4px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700
+          background: isLight ? 'rgba(37, 99, 235, 0.12)' : 'rgba(59, 130, 246, 0.15)',
+          border: `1px solid ${isLight ? '#2563eb' : '#3b82f6'}`,
+          color: isLight ? '#1d4ed8' : '#60a5fa',
+          padding: '4px 12px', borderRadius: '20px', fontSize: '0.75rem', fontWeight: 700
         }}>
-          ● LIVE MULTI-DEVICE MESH SYNC ACTIVE
+          {isOnline ? '🟢 CLOUD SYNC READY' : '📶 OFFLINE STORE ACTIVE'}
         </span>
+      </div>
+
+      {/* Honest Capability & Architecture Disclosure */}
+      <div
+        style={{
+          background: isLight ? '#f1f5f9' : 'rgba(15, 23, 42, 0.6)',
+          border: `1px solid ${isLight ? '#cbd5e1' : '#334155'}`,
+          borderRadius: '8px',
+          padding: '10px 14px',
+          marginBottom: '16px',
+          fontSize: '0.75rem',
+          color: isLight ? '#334155' : '#cbd5e1',
+          lineHeight: '1.5',
+        }}
+      >
+        <strong style={{ color: isLight ? '#0369a1' : '#38bdf8' }}>ℹ️ Offline Protocol Architecture:</strong> Web browsers operate in an OS sandbox without raw Bluetooth LE radio broadcasting privileges. Clicking broadcast creates a cryptographically unique distress record in local IndexedDB, prepares it for relay, and automatically transmits it via the <code>useOfflineSync</code> pipeline as soon as cellular, Wi-Fi, or peer mesh gateway connectivity is detected.
       </div>
 
       {/* SOS Trigger Panel */}
       <div style={{
-        background: 'linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(153, 27, 27, 0.25))',
-        border: '1px solid rgba(239, 68, 68, 0.35)',
-        borderRadius: '12px', padding: '18px', marginBottom: '18px',
+        background: isLight ? 'linear-gradient(135deg, #fee2e2, #fecaca)' : 'linear-gradient(135deg, rgba(239, 68, 68, 0.15), rgba(153, 27, 27, 0.25))',
+        border: `1px solid ${isLight ? '#fca5a5' : '#ef444450'}`, borderRadius: '12px', padding: '18px', marginBottom: '18px',
         display: 'flex', flexWrap: 'wrap', justifyContent: 'space-between', alignItems: 'center', gap: '16px'
       }}>
         <div style={{ display: 'flex', gap: '16px', alignItems: 'center', flexWrap: 'wrap' }}>
           <div>
-            <label style={{ fontSize: '0.75rem', color: '#cbd5e1', fontWeight: 700, display: 'block', marginBottom: '4px' }}>
+            <label style={{ fontSize: '0.75rem', color: isLight ? '#7f1d1d' : '#cbd5e1', fontWeight: 700, display: 'block', marginBottom: '4px' }}>
               People Needing Rescue:
             </label>
             <input
@@ -234,13 +170,14 @@ export const OfflineSosMesh: React.FC<{ userLat?: number; userLon?: number }> = 
               value={peopleCount}
               onChange={e => setPeopleCount(parseInt(e.target.value) || 1)}
               style={{
-                width: '70px', padding: '6px 10px', background: '#0f172a', border: '1px solid #475569',
-                borderRadius: '6px', color: '#f8fafc', fontWeight: 700
+                width: '70px', padding: '6px 10px', background: isLight ? '#ffffff' : '#0f172a',
+                border: `1px solid ${isLight ? '#cbd5e1' : '#475569'}`,
+                borderRadius: '6px', color: fg, fontWeight: 700
               }}
             />
           </div>
 
-          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', color: '#fca5a5', fontWeight: 700 }}>
+          <label style={{ display: 'flex', alignItems: 'center', gap: '8px', cursor: 'pointer', fontSize: '0.82rem', color: isLight ? '#991b1b' : '#fca5a5', fontWeight: 700 }}>
             <input
               type="checkbox"
               checked={medicalUrgent}
@@ -258,43 +195,40 @@ export const OfflineSosMesh: React.FC<{ userLat?: number; userLon?: number }> = 
             background: broadcasting ? '#64748b' : 'linear-gradient(135deg, #ef4444, #dc2626)',
             color: '#fff', border: 'none', borderRadius: '10px', padding: '12px 24px',
             fontSize: '0.95rem', fontWeight: 800, cursor: broadcasting ? 'not-allowed' : 'pointer',
-            boxShadow: '0 4px 20px rgba(239, 68, 68, 0.4)'
+            boxShadow: '0 4px 20px rgba(239, 68, 68, 0.4)',
           }}
         >
-          {broadcasting ? '📡 Broadcasting Across All Phones…' : '🆘 Broadcast Live SOS Mesh'}
+          {broadcasting ? '💾 Writing to Offline Queue…' : '🆘 Broadcast Emergency SOS Beacon'}
         </button>
       </div>
 
-      {/* Live Mesh Propagation Ticker */}
-      {sosHistory.length > 0 && (
+      {/* Emergency Signal Hop Ledger */}
+      {sosLedger.length > 0 && (
         <div>
-          <h4 style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: '#94a3b8', textTransform: 'uppercase', letterSpacing: '0.05em' }}>
-            Live Emergency Signal Hop Ledger
+          <h4 style={{ margin: '0 0 10px 0', fontSize: '0.85rem', color: muted, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            Persistent Emergency Signal Ledger (IndexedDB)
           </h4>
           <div style={{ display: 'flex', flexDirection: 'column', gap: '8px' }}>
-            {sosHistory.map(sos => (
+            {sosLedger.map(sos => (
               <div
-                key={sos.id}
+                key={sos.clientReportId}
                 style={{
-                  background: 'rgba(15, 23, 42, 0.9)',
-                  border: '1px solid rgba(255, 255, 255, 0.08)',
-                  borderRadius: '8px',
+                  background: itemBg, border: `1px solid ${itemBrd}`, borderRadius: '8px',
                   padding: '10px 14px', display: 'flex', justifyContent: 'space-between', alignItems: 'center',
                   fontSize: '0.8rem', flexWrap: 'wrap', gap: '8px'
                 }}
               >
                 <div>
-                  <strong style={{ color: '#ef4444' }}>{sos.id}</strong> &bull; Lat: {sos.lat.toFixed(4)}, Lon: {sos.lon.toFixed(4)} &bull; Casualties: {sos.casualties}
-                  <span style={{ color: '#64748b', marginLeft: '8px' }}>({sos.timestamp})</span>
+                  <strong style={{ color: isLight ? '#b91c1c' : '#ef4444' }}>{sos.id}</strong> · {sos.people} Person{sos.people > 1 ? 's' : ''} {sos.urgent ? '(MEDICAL URGENT)' : ''} · Lat: {sos.lat.toFixed(4)}, Lon: {sos.lon.toFixed(4)}
+                  <span style={{ color: muted, marginLeft: '8px' }}>({sos.time})</span>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-                  <span style={{ color: '#38bdf8' }}>Hops: {sos.hops}/3</span>
                   <span style={{
-                    background: sos.status === 'DELIVERED_NDRF_SATELLITE_HUB' ? 'rgba(34,197,94,0.2)' : 'rgba(245,158,11,0.2)',
-                    color: sos.status === 'DELIVERED_NDRF_SATELLITE_HUB' ? '#4ade80' : '#fcd34d',
-                    padding: '2px 8px', borderRadius: '4px', fontWeight: 700
+                    background: sos.status === 'SYNCHRONIZED_TO_COMMAND_CENTER' ? (isLight ? 'rgba(22, 163, 74, 0.15)' : 'rgba(34,197,94,0.2)') : (isLight ? 'rgba(217, 119, 6, 0.15)' : 'rgba(245,158,11,0.2)'),
+                    color: sos.status === 'SYNCHRONIZED_TO_COMMAND_CENTER' ? (isLight ? '#15803d' : '#4ade80') : (isLight ? '#b45309' : '#fcd34d'),
+                    padding: '2px 8px', borderRadius: '4px', fontWeight: 700, fontSize: '0.72rem'
                   }}>
-                    {sos.status === 'DELIVERED_NDRF_SATELLITE_HUB' ? '✅ ACK RECEIVED BY NDRF' : '📡 PROPAGATING MESH'}
+                    {sos.status === 'SYNCHRONIZED_TO_COMMAND_CENTER' ? '✅ ACKNOWLEDGED BY CENTRAL COMMAND' : '⏳ SAVED IN LOCAL QUEUE (PENDING SYNC)'}
                   </span>
                 </div>
               </div>

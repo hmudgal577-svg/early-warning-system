@@ -33,9 +33,20 @@ public class RegionController {
     }
 
     @PatchMapping("/{id}/road-status")
-    public ResponseEntity<Region> updateRoadStatus(@PathVariable UUID id, @RequestParam RoadStatus status) {
+    public ResponseEntity<Region> updateRoadStatus(
+            @PathVariable UUID id, 
+            @RequestParam(required = false) RoadStatus status,
+            @RequestBody(required = false) java.util.Map<String, Object> body) {
+        RoadStatus targetStatus = status;
+        if (targetStatus == null && body != null && body.containsKey("status")) {
+            targetStatus = RoadStatus.valueOf(body.get("status").toString());
+        }
+        if (targetStatus == null) {
+            return ResponseEntity.badRequest().build();
+        }
+        final RoadStatus s = targetStatus;
         return regionRepo.findById(id).map(r -> {
-            r.setRoadStatus(status);
+            r.setRoadStatus(s);
             return ResponseEntity.ok(regionRepo.save(r));
         }).orElse(ResponseEntity.notFound().build());
     }

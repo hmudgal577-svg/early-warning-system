@@ -48,7 +48,6 @@ public class SeedDataService {
     private static final double[] DEFAULT_RAINFALL = new double[]{30, 12};
 
     @EventListener(ApplicationReadyEvent.class)
-    @Transactional
     public void seedData() {
         if (!seedEnabled) {
             log.info("Seed data disabled (app.seed.enabled=false) — skipping");
