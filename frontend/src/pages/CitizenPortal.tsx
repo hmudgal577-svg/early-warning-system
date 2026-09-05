@@ -77,6 +77,7 @@ export const CitizenPortal: React.FC = () => {
   }, [userLocation]);
 
   const [showOfflineMap, setShowOfflineMap] = useState<boolean>(false);
+  const [highlightShelters, setHighlightShelters] = useState<boolean>(false);
   const [nearbyHazard, setNearbyHazard] = useState<{
     name: string;
     distKm: number;
@@ -595,7 +596,10 @@ export const CitizenPortal: React.FC = () => {
           defaultLat={userLocation?.lat || selectedZone.lat}
           defaultLng={userLocation?.lon || selectedZone.lon}
           onOpenOfflineMap={() => setShowOfflineMap(true)}
-          onFindNearestShelter={() => setActiveTab('shelters')}
+          onFindNearestShelter={() => {
+            setHighlightShelters(true);
+            setActiveTab('shelters');
+          }}
         />
 
         {/* ── Complete Citizen Offline Rescue Mode (6 Interactive Workflows & Beacon) ── */}
@@ -812,6 +816,7 @@ export const CitizenPortal: React.FC = () => {
             userLat={userLocation?.lat || selectedZone.lat}
             userLon={userLocation?.lon || selectedZone.lon}
             theme={theme}
+            initialHighlightNearest={highlightShelters}
           />
         )}
 

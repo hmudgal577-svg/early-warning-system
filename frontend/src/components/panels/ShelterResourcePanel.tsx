@@ -1,5 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { calculateHaversineDistanceKm, calculateCompassBearing } from '../../utils/geoUtils';
+import { isOfflineSimulated } from '../../services/offlineStore';
 
 export interface Shelter {
   id: string;
@@ -90,6 +91,7 @@ interface Props {
   userLat?: number;
   userLon?: number;
   theme?: 'light' | 'dark';
+  initialHighlightNearest?: boolean;
 }
 
 export const ShelterResourcePanel: React.FC<Props> = ({
@@ -97,13 +99,22 @@ export const ShelterResourcePanel: React.FC<Props> = ({
   userLat,
   userLon,
   theme = 'dark',
+  initialHighlightNearest = false,
 }) => {
   const [shelters, setShelters] = useState<Shelter[]>(MOCK_SHELTERS);
   const [cachedTime, setCachedTime] = useState<number | null>(null);
-  const [highlightNearest, setHighlightNearest] = useState<boolean>(false);
-  const isOnline = navigator.onLine;
+  const [highlightNearest, setHighlightNearest] = useState<boolean>(initialHighlightNearest);
+  const [isOnline, setIsOnline] = useState<boolean>(() => navigator.onLine && !isOfflineSimulated());
 
   useEffect(() => {
+    const updateOnline = () => {
+      setIsOnline(navigator.onLine && !isOfflineSimulated());
+    };
+
+    window.addEventListener('online', updateOnline);
+    window.addEventListener('offline', updateOnline);
+    window.addEventListener('ews-offline-sim-change', updateOnline);
+
     import('../../services/offlineStore').then(async (store) => {
       try {
         const cached = await store.getCachedShelters();
@@ -115,6 +126,12 @@ export const ShelterResourcePanel: React.FC<Props> = ({
         }
       } catch {}
     });
+
+    return () => {
+      window.removeEventListener('online', updateOnline);
+      window.removeEventListener('offline', updateOnline);
+      window.removeEventListener('ews-offline-sim-change', updateOnline);
+    };
   }, []);
 
   // Compute live distance and bearing for each shelter if user coordinates are available

@@ -3,6 +3,7 @@ import {
   queueReport,
   generateClientReportId,
   getPendingReports,
+  isOfflineSimulated,
 } from '../../services/offlineStore';
 import { submitReport } from '../../services/api';
 import { CreateReportPayload, PendingReportItem } from '../../types';
@@ -32,17 +33,39 @@ export const OfflineSosMesh: React.FC<Props> = ({
     lon: number;
   }>>([]);
 
-  const isOnline = navigator.onLine;
+  const [isOnline, setIsOnline] = useState<boolean>(() => navigator.onLine && !isOfflineSimulated());
 
   useEffect(() => {
     loadExistingSosReports();
+
+    const updateOnline = () => {
+      setIsOnline(navigator.onLine && !isOfflineSimulated());
+    };
+
+    window.addEventListener('online', updateOnline);
+    window.addEventListener('offline', updateOnline);
+    window.addEventListener('ews-offline-sim-change', updateOnline);
+
+    return () => {
+      window.removeEventListener('online', updateOnline);
+      window.removeEventListener('offline', updateOnline);
+      window.removeEventListener('ews-offline-sim-change', updateOnline);
+    };
   }, []);
 
   const loadExistingSosReports = async () => {
     try {
       const reports = await getPendingReports();
       const sosItems = reports
-        .filter(r => r.payload.description?.includes('[OFFLINE SOS BEACON]'))
+        .filter(r =>
+          r.payload.description?.includes('[OFFLINE SOS BEACON]') ||
+          r.payload.description?.includes('EMERGENCY SOS') ||
+          r.payload.description?.includes('SIGNAL RESCUE') ||
+          r.payload.description?.includes('DISTRESS BEACON') ||
+          r.payload.medicalUrgent ||
+          r.payload.category === 'INJURED_PEOPLE' ||
+          r.payload.category === 'TRAPPED_CITIZENS'
+        )
         .map(r => ({
           id: `SOS-${r.clientReportId.slice(-4).toUpperCase()}`,
           clientReportId: r.clientReportId,
@@ -80,7 +103,7 @@ export const OfflineSosMesh: React.FC<Props> = ({
     let finalStatus = 'STORED_LOCALLY_PENDING_GATEWAY';
 
     try {
-      if (navigator.onLine) {
+      if (navigator.onLine && !isOfflineSimulated()) {
         await submitReport(payload);
         finalStatus = 'SYNCHRONIZED_TO_COMMAND_CENTER';
       } else {

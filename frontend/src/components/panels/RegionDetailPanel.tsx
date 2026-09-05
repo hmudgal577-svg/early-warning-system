@@ -1,6 +1,7 @@
 import React, { useEffect, useState } from 'react';
 import { RiskDetail } from '../../types';
 import { fetchRiskDetail, updateRoadStatus } from '../../services/api';
+import { isOfflineSimulated } from '../../services/offlineStore';
 import { RiskBadge } from '../shared/RiskBadge';
 import { ExplainabilityChart } from './ExplainabilityChart';
 import { WeatherSparkline } from './WeatherSparkline';
@@ -97,7 +98,7 @@ export const RegionDetailPanel: React.FC<Props> = ({ regionId, onClose, userRole
             <div style={{ marginTop: '24px' }}>
               <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '8px' }}>
                 <h3 style={{ fontSize: '0.85rem', margin: 0, color: 'var(--color-base-000)' }}>Road Corridor Status</h3>
-                {!navigator.onLine && (
+                {(!navigator.onLine || isOfflineSimulated()) && (
                   <span style={{ fontSize: '0.7rem', color: '#f59e0b', fontWeight: 700 }}>📴 Offline (Queued)</span>
                 )}
               </div>
@@ -107,7 +108,7 @@ export const RegionDetailPanel: React.FC<Props> = ({ regionId, onClose, userRole
                   const newStatus = e.target.value as any;
                   setDetail(prev => prev ? { ...prev, roadStatus: newStatus } : null);
                   try {
-                    if (navigator.onLine) {
+                    if (navigator.onLine && !isOfflineSimulated()) {
                       await updateRoadStatus(detail.regionId, newStatus);
                     } else {
                       const { queueRoadStatus } = await import('../../services/offlineStore');

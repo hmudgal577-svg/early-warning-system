@@ -3,6 +3,7 @@ import { MapContainer, TileLayer, Polygon, Polyline, Popup, Marker, useMap } fro
 import 'leaflet/dist/leaflet.css';
 import L from 'leaflet';
 import { calculateHaversineDistanceKm, calculateCompassBearing } from '../../utils/geoUtils';
+import { isOfflineSimulated, getCachedShelters } from '../../services/offlineStore';
 
 export interface ShelterItem {
   id?: string;
@@ -85,27 +86,52 @@ export const OfflineVectorMap: React.FC<Props> = ({
   cachedTimestamp,
   onClose,
 }) => {
-  const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
-  const [mapMode, setMapMode] = useState<'leaflet' | 'vector'>(navigator.onLine ? 'leaflet' : 'vector');
+  const computeOnline = () => navigator.onLine && !isOfflineSimulated();
+  const [isOnline, setIsOnline] = useState<boolean>(computeOnline);
+  const [mapMode, setMapMode] = useState<'leaflet' | 'vector'>(computeOnline() ? 'leaflet' : 'vector');
   const [selectedPoint, setSelectedPoint] = useState<string | null>(null);
+  const [cachedShelters, setCachedShelters] = useState<ShelterItem[]>([]);
 
-  // Keep track of browser online/offline status
+  // Keep track of browser online/offline status and offline simulation events
   useEffect(() => {
-    const handleOnline = () => {
-      setIsOnline(true);
-      setMapMode('leaflet');
+    const updateStatus = () => {
+      const online = navigator.onLine && !isOfflineSimulated();
+      setIsOnline(online);
+      setMapMode(online ? 'leaflet' : 'vector');
     };
-    const handleOffline = () => {
-      setIsOnline(false);
-      setMapMode('vector');
-    };
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+
+    window.addEventListener('online', updateStatus);
+    window.addEventListener('offline', updateStatus);
+    window.addEventListener('ews-offline-sim-change', updateStatus);
+
+    // Auto-fetch cached shelters from IndexedDB if not provided via props
+    if (!shelters || shelters.length === 0) {
+      getCachedShelters()
+        .then(cached => {
+          if (cached?.data && Array.isArray(cached.data)) {
+            const items: ShelterItem[] = cached.data.map((s: any) => ({
+              id: s.id,
+              name: s.name,
+              lat: Number(s.lat),
+              lng: Number(s.lng),
+              status: s.status,
+              totalBeds: s.totalBeds,
+              occupiedBeds: s.occupiedBeds,
+              foodStockDays: s.foodStockDays,
+              waterSupplyLitres: s.waterSupplyLitres,
+            }));
+            setCachedShelters(items);
+          }
+        })
+        .catch(() => {});
+    }
+
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', updateStatus);
+      window.removeEventListener('offline', updateStatus);
+      window.removeEventListener('ews-offline-sim-change', updateStatus);
     };
-  }, []);
+  }, [shelters]);
 
   // Safe fallback citizen coordinates
   const centerLat = typeof userLat === 'number' && !isNaN(userLat) ? userLat : 11.5534;
@@ -152,7 +178,8 @@ export const OfflineVectorMap: React.FC<Props> = ({
     : baseSafe;
 
   // Filter shelters to local area (within 50 km) to prevent country-wide distortion
-  const localShelters = (Array.isArray(shelters) ? shelters : []).filter(s => {
+  const candidateShelters = (Array.isArray(shelters) && shelters.length > 0) ? shelters : cachedShelters;
+  const localShelters = candidateShelters.filter(s => {
     if (!s || typeof s.lat !== 'number' || typeof s.lng !== 'number' || isNaN(s.lat) || isNaN(s.lng)) {
       return false;
     }

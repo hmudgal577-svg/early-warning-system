@@ -11,6 +11,7 @@ import {
   EmergencyDistressState,
   getCachedHeatmapWithMeta,
   getCachedShelters,
+  isOfflineSimulated,
 } from '../../services/offlineStore';
 import { calculateHaversineDistanceKm, calculateCompassBearing } from '../../utils/geoUtils';
 import { OfflineVectorMap } from '../map/OfflineVectorMap';
@@ -66,7 +67,7 @@ export const OfflineRescueMode: React.FC<Props> = ({
   const [selectedInjury, setSelectedInjury] = useState<InjuryType>('SERIOUS_BLEEDING');
   const [beaconState, setBeaconState] = useState<EmergencyDistressState | null>(null);
 
-  const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
+  const [isOnline, setIsOnline] = useState<boolean>(() => navigator.onLine && !isOfflineSimulated());
   const [cachedTime, setCachedTime] = useState<number | null>(null);
   const [submitting, setSubmitting] = useState<boolean>(false);
   const [feedbackMsg, setFeedbackMsg] = useState<{ type: 'success' | 'alert'; text: string } | null>(null);
@@ -92,10 +93,14 @@ export const OfflineRescueMode: React.FC<Props> = ({
 
   // Listen to network status
   useEffect(() => {
-    const handleOnline = () => setIsOnline(true);
-    const handleOffline = () => setIsOnline(false);
-    window.addEventListener('online', handleOnline);
-    window.addEventListener('offline', handleOffline);
+    const updateOnline = () => {
+      const online = navigator.onLine && !isOfflineSimulated();
+      setIsOnline(online);
+    };
+
+    window.addEventListener('online', updateOnline);
+    window.addEventListener('offline', updateOnline);
+    window.addEventListener('ews-offline-sim-change', updateOnline);
 
     // Load active beacon state if exists
     const active = getEmergencyDistressState();
@@ -108,8 +113,9 @@ export const OfflineRescueMode: React.FC<Props> = ({
     loadCachedData();
 
     return () => {
-      window.removeEventListener('online', handleOnline);
-      window.removeEventListener('offline', handleOffline);
+      window.removeEventListener('online', updateOnline);
+      window.removeEventListener('offline', updateOnline);
+      window.removeEventListener('ews-offline-sim-change', updateOnline);
       stopStrobe();
       stopSiren();
     };

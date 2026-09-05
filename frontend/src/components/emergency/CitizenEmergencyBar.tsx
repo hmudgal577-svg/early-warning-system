@@ -9,6 +9,7 @@ import {
   setEmergencyDistressState,
   getEmergencyDistressState,
   EmergencyDistressState,
+  isOfflineSimulated,
 } from '../../services/offlineStore';
 import { CreateReportPayload } from '../../types';
 
@@ -96,7 +97,8 @@ export const CitizenEmergencyBar: React.FC<Props> = ({
     };
 
     try {
-      if (navigator.onLine) {
+      const isOnline = navigator.onLine && !isOfflineSimulated();
+      if (isOnline) {
         await submitReport(payload);
         setFeedbackMsg({
           type: 'success',
@@ -154,7 +156,7 @@ export const CitizenEmergencyBar: React.FC<Props> = ({
       };
 
       try {
-        if (navigator.onLine) {
+        if (navigator.onLine && !isOfflineSimulated()) {
           await submitReport(payload);
         } else {
           await queueReport(payload);
