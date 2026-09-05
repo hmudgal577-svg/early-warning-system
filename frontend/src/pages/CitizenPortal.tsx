@@ -10,6 +10,7 @@ import { ShelterResourcePanel } from '../components/panels/ShelterResourcePanel'
 import { OfflineSosMesh } from '../components/panels/OfflineSosMesh';
 import { OfflineStatusHeader } from '../components/layout/OfflineStatusHeader';
 import { OfflineRescueMode } from '../components/emergency/OfflineRescueMode';
+import { CitizenEmergencyBar } from '../components/emergency/CitizenEmergencyBar';
 import { OfflineVectorMap } from '../components/map/OfflineVectorMap';
 import { calculateHaversineDistanceKm, calculateCompassBearing } from '../utils/geoUtils';
 import { getCachedHeatmapWithMeta, getCachedIncidents } from '../services/offlineStore';
@@ -589,6 +590,14 @@ export const CitizenPortal: React.FC = () => {
           <p style={{ color: theme === 'dark' ? '#94a3b8' : '#475569', fontSize: '0.92rem', margin: 0 }}>{t.subtitle}</p>
         </div>
 
+        {/* ── 1-Tap Offline Emergency Action Bar ── */}
+        <CitizenEmergencyBar
+          defaultLat={userLocation?.lat || selectedZone.lat}
+          defaultLng={userLocation?.lon || selectedZone.lon}
+          onOpenOfflineMap={() => setShowOfflineMap(true)}
+          onFindNearestShelter={() => setActiveTab('shelters')}
+        />
+
         {/* ── Complete Citizen Offline Rescue Mode (6 Interactive Workflows & Beacon) ── */}
         <OfflineRescueMode
           defaultLat={userLocation?.lat || selectedZone.lat}
@@ -813,6 +822,49 @@ export const CitizenPortal: React.FC = () => {
             userLon={userLocation?.lon || selectedZone.lon}
             theme={theme}
           />
+        )}
+
+        {/* ── Offline Vector Map Modal ── */}
+        {showOfflineMap && (
+          <div
+            style={{
+              position: 'fixed',
+              inset: 0,
+              zIndex: 9999,
+              background: 'rgba(0, 0, 0, 0.85)',
+              backdropFilter: 'blur(8px)',
+              display: 'flex',
+              flexDirection: 'column',
+              padding: '16px',
+            }}
+          >
+            <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: '8px' }}>
+              <button
+                onClick={() => setShowOfflineMap(false)}
+                style={{
+                  background: '#ef4444',
+                  color: '#ffffff',
+                  border: 'none',
+                  borderRadius: '8px',
+                  padding: '8px 16px',
+                  fontWeight: 800,
+                  fontSize: '0.85rem',
+                  cursor: 'pointer',
+                  boxShadow: '0 2px 10px rgba(239, 68, 68, 0.5)',
+                }}
+              >
+                ✕ Close Map
+              </button>
+            </div>
+            <div style={{ flex: 1, borderRadius: '16px', overflow: 'hidden', border: '1px solid #334155' }}>
+              <OfflineVectorMap
+                userLat={userLocation?.lat || selectedZone.lat}
+                userLon={userLocation?.lon || selectedZone.lon}
+                zoneName={selectedZone.name}
+                onClose={() => setShowOfflineMap(false)}
+              />
+            </div>
+          </div>
         )}
       </main>
 

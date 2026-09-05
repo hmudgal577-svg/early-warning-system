@@ -8,12 +8,16 @@ import {
   getPendingRoadStatuses,
   updatePendingRoadStatus,
   removePendingRoadStatus,
+  isOfflineSimulated,
+  setSimulateOffline,
 } from '../services/offlineStore';
 import { submitReport, uploadPhoto, updateRoadStatus } from '../services/api';
 import { PendingReportItem, PendingRoadStatusItem } from '../types';
 
 export function useOfflineSync() {
-  const [isOnline, setIsOnline] = useState<boolean>(navigator.onLine);
+  const computeOnlineState = () => navigator.onLine && !isOfflineSimulated();
+  const [isOnline, setIsOnline] = useState<boolean>(computeOnlineState);
+  const [isSimulated, setIsSimulated] = useState<boolean>(isOfflineSimulated);
   const [pendingReports, setPendingReports] = useState<PendingReportItem[]>([]);
   const [pendingRoads, setPendingRoads] = useState<PendingRoadStatusItem[]>([]);
   const [isSyncing, setIsSyncing] = useState<boolean>(false);
@@ -123,33 +127,47 @@ export function useOfflineSync() {
     let intervalId: any = null;
 
     const handleOnline = () => {
-      setIsOnline(true);
-      if (!isSyncing) {
+      const online = computeOnlineState();
+      setIsOnline(online);
+      setIsSimulated(isOfflineSimulated());
+      if (online && !isSyncing) {
         syncNow();
       }
     };
     const handleOffline = () => {
       setIsOnline(false);
+      setIsSimulated(isOfflineSimulated());
     };
 
     const handleQueueChange = () => {
       refreshPending();
     };
 
+    const handleSimChange = (e: any) => {
+      const sim = !!e.detail;
+      setIsSimulated(sim);
+      const online = navigator.onLine && !sim;
+      setIsOnline(online);
+      if (online && !isSyncing) {
+        syncNow();
+      }
+    };
+
     window.addEventListener('online', handleOnline);
     window.addEventListener('offline', handleOffline);
     window.addEventListener('ews-queue-change', handleQueueChange);
+    window.addEventListener('ews-offline-sim-change', handleSimChange);
 
     // Immediate check on mount: refresh pending and auto-sync immediately if online
     refreshPending().then(() => {
-      if (navigator.onLine && !isSyncing) {
+      if (computeOnlineState() && !isSyncing) {
         syncNow();
       }
     });
 
     // Background auto-retry interval: periodically retry pending queue when online
     intervalId = setInterval(() => {
-      if (navigator.onLine && !isSyncing) {
+      if (computeOnlineState() && !isSyncing) {
         getPendingReports().then((reps) => {
           if (reps.length > 0) {
             syncNow();
@@ -168,14 +186,22 @@ export function useOfflineSync() {
       window.removeEventListener('online', handleOnline);
       window.removeEventListener('offline', handleOffline);
       window.removeEventListener('ews-queue-change', handleQueueChange);
+      window.removeEventListener('ews-offline-sim-change', handleSimChange);
       if (intervalId) clearInterval(intervalId);
     };
   }, [syncNow, refreshPending, isSyncing]);
 
   const pendingCount = pendingReports.length + pendingRoads.length;
 
+  const toggleSimulateOffline = useCallback(() => {
+    const next = !isOfflineSimulated();
+    setSimulateOffline(next);
+  }, []);
+
   return {
     isOnline,
+    isSimulated,
+    toggleSimulateOffline,
     pendingReports,
     pendingRoads,
     pendingCount,

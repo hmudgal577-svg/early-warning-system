@@ -8,7 +8,7 @@ interface Props {
 }
 
 export const OfflineStatusHeader: React.FC<Props> = ({ cachedTimestamp, compact = false, theme = 'dark' }) => {
-  const { isOnline, pendingCount, isSyncing, syncNow, syncError } = useOfflineSync();
+  const { isOnline, isSimulated, toggleSimulateOffline, pendingCount, isSyncing, syncNow, syncError } = useOfflineSync();
   const [localCachedTime, setLocalCachedTime] = useState<number | null>(cachedTimestamp || null);
 
   useEffect(() => {
@@ -43,9 +43,24 @@ export const OfflineStatusHeader: React.FC<Props> = ({ cachedTimestamp, compact 
         ) : (
           <span style={{ color: theme === 'light' ? '#b45309' : '#f59e0b', display: 'flex', alignItems: 'center', gap: '4px' }}>
             <span style={{ width: 7, height: 7, borderRadius: '50%', background: theme === 'light' ? '#b45309' : '#f59e0b', display: 'inline-block' }} />
-            OFFLINE (CACHED)
+            OFFLINE (INDEXED_DB)
           </span>
         )}
+
+        <button
+          onClick={toggleSimulateOffline}
+          title="Toggle between Online Cloud and Offline Zero-Internet simulation mode"
+          style={{
+            background: isSimulated ? '#ef444420' : 'transparent',
+            border: `1px solid ${isSimulated ? '#ef4444' : '#475569'}`,
+            color: isSimulated ? '#fca5a5' : (theme === 'light' ? '#475569' : '#94a3b8'),
+            padding: '2px 8px', borderRadius: '4px', fontSize: '0.7rem', cursor: 'pointer',
+            fontWeight: 700
+          }}
+        >
+          {isSimulated ? '🔴 End Offline Sim' : '📴 Test Offline'}
+        </button>
+
         {pendingCount > 0 && (
           <button
             onClick={() => syncNow()}
@@ -72,11 +87,11 @@ export const OfflineStatusHeader: React.FC<Props> = ({ cachedTimestamp, compact 
         ? 'linear-gradient(90deg, #78350f, #92400e, #78350f)'
         : pendingCount > 0
         ? 'linear-gradient(90deg, #1e293b, #0f172a)'
-        : 'transparent',
-      borderBottom: !isOnline ? '1px solid #f59e0b60' : 'none',
-      padding: !isOnline || pendingCount > 0 ? '6px 16px' : '0',
+        : 'rgba(15, 23, 42, 0.6)',
+      borderBottom: !isOnline ? '1px solid #f59e0b80' : '1px solid rgba(255,255,255,0.06)',
+      padding: '6px 16px',
       transition: 'all 0.3s ease',
-      display: !isOnline || pendingCount > 0 ? 'block' : 'none',
+      display: 'block',
     }}>
       <div style={{
         maxWidth: '1200px', margin: '0 auto', display: 'flex',
@@ -90,23 +105,47 @@ export const OfflineStatusHeader: React.FC<Props> = ({ cachedTimestamp, compact 
                 📴 OFFLINE MODE ACTIVE
               </span>
               <span>
-                Cellular connection interrupted. Showing <strong>cached disaster data</strong>
-                {localCachedTime ? ` synchronized at ${formatTimestamp(localCachedTime)}.` : ' from local offline storage.'}
+                {isSimulated ? 'Offline simulation active.' : 'Cellular connection interrupted.'} Showing <strong>cached disaster data &amp; vector maps</strong>
+                {localCachedTime ? ` (synced ${formatTimestamp(localCachedTime)}).` : ' from local IndexedDB.'}
               </span>
             </>
           ) : (
             <>
-              <span style={{ color: '#4ade80', fontWeight: 700 }}>
-                🟢 Network Restored
+              <span style={{ color: '#4ade80', fontWeight: 700, display: 'flex', alignItems: 'center', gap: '5px' }}>
+                <span style={{ width: 8, height: 8, borderRadius: '50%', background: '#22c55e', display: 'inline-block' }} />
+                Network Connected
               </span>
               <span>
-                {pendingCount} item{pendingCount > 1 ? 's' : ''} in local queue ready for cloud sync.
+                {pendingCount > 0
+                  ? `${pendingCount} item${pendingCount > 1 ? 's' : ''} in local queue ready for cloud sync.`
+                  : 'All emergency telemetry & offline stores synchronized.'}
               </span>
             </>
           )}
         </div>
 
         <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
+          {/* Test Offline Simulation Button */}
+          <button
+            onClick={toggleSimulateOffline}
+            style={{
+              background: isSimulated ? '#ef4444' : 'rgba(255,255,255,0.12)',
+              color: '#ffffff',
+              border: `1px solid ${isSimulated ? '#fca5a5' : 'rgba(255,255,255,0.2)'}`,
+              borderRadius: '6px',
+              padding: '4px 10px',
+              fontWeight: 700,
+              fontSize: '0.74rem',
+              cursor: 'pointer',
+              display: 'flex',
+              alignItems: 'center',
+              gap: '4px'
+            }}
+          >
+            <span>{isSimulated ? '🟢' : '📴'}</span>
+            <span>{isSimulated ? 'Resume Online Cloud' : 'Test Offline Mode'}</span>
+          </button>
+
           {pendingCount > 0 && (
             <span style={{ background: 'rgba(255,255,255,0.15)', padding: '2px 8px', borderRadius: '12px', fontSize: '0.75rem', fontWeight: 700 }}>
               {pendingCount} Pending Sync

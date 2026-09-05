@@ -25,7 +25,11 @@ import {
   cacheTelemetry,
   getCachedTelemetry,
   cacheIncidents,
-  getCachedIncidents
+  getCachedIncidents,
+  isOfflineSimulated,
+  getPendingReports,
+  getPendingRoadStatuses,
+  queueReport
 } from './offlineStore';
 
 export let DEMO_MODE = false;
@@ -118,6 +122,29 @@ api.interceptors.response.use(
 // ── API Functions with offline IndexedDB fallback ─────────────────────────────
 
 export const fetchHeatmap = async (): Promise<RegionRisk[]> => {
+  const offline = !navigator.onLine || isOfflineSimulated();
+  if (offline) {
+    setDemoMode(true);
+    try {
+      const cached = await getCachedHeatmapWithMeta();
+      const rawData = (cached && cached.data && cached.data.length > 0) ? cached.data : MOCK_HEATMAP;
+      notifyCacheUsed(cached ? cached.timestamp : Date.now());
+
+      // Merge any pending road status overrides from local offline queue
+      const pendingRoads = await getPendingRoadStatuses().catch(() => []);
+      if (pendingRoads.length > 0) {
+        return rawData.map(r => {
+          const override = pendingRoads.find(p => p.regionId === r.regionId);
+          return override ? { ...r, roadStatus: override.roadStatus } : r;
+        });
+      }
+      return rawData;
+    } catch {
+      notifyCacheUsed(null);
+      return MOCK_HEATMAP;
+    }
+  }
+
   try {
     const res = await api.get<RegionRisk[]>('/api/risk/heatmap');
     setDemoMode(false);
@@ -142,6 +169,13 @@ export const fetchHeatmap = async (): Promise<RegionRisk[]> => {
 };
 
 export const fetchRiskDetail = async (regionId: string): Promise<RiskDetail> => {
+  if (!navigator.onLine || isOfflineSimulated()) {
+    setDemoMode(true);
+    const detail = getMockRiskDetail(regionId);
+    if (!detail) throw new Error('Region not found in mock data');
+    return detail;
+  }
+
   try {
     const res = await api.get<RiskDetail>(`/api/risk/regions/${regionId}`);
     return res.data;
@@ -154,6 +188,11 @@ export const fetchRiskDetail = async (regionId: string): Promise<RiskDetail> => 
 };
 
 export const fetchRecentAlerts = async (): Promise<AlertItem[]> => {
+  if (!navigator.onLine || isOfflineSimulated()) {
+    setDemoMode(true);
+    return MOCK_ALERTS;
+  }
+
   try {
     const res = await api.get<AlertItem[]>('/api/alerts/recent');
     return res.data;
@@ -164,20 +203,50 @@ export const fetchRecentAlerts = async (): Promise<AlertItem[]> => {
 };
 
 export const fetchRecentReports = async (): Promise<CitizenReport[]> => {
-  try {
-    const res = await api.get<CitizenReport[]>('/api/reports/recent');
-    await cacheIncidents(res.data).catch(() => {});
-    return res.data;
-  } catch {
+  const offline = !navigator.onLine || isOfflineSimulated();
+  let baseReports: CitizenReport[] = [];
+
+  if (offline) {
     setDemoMode(true);
     try {
       const cached = await getCachedIncidents();
-      if (cached && cached.data) {
-        return cached.data;
-      }
+      baseReports = cached && cached.data ? cached.data : [];
     } catch {}
-    return [];
+  } else {
+    try {
+      const res = await api.get<CitizenReport[]>('/api/reports/recent');
+      baseReports = res.data;
+      await cacheIncidents(res.data).catch(() => {});
+    } catch {
+      setDemoMode(true);
+      try {
+        const cached = await getCachedIncidents();
+        if (cached && cached.data) baseReports = cached.data;
+      } catch {}
+    }
   }
+
+  // Merge any pending reports queued offline so user immediately sees their submission
+  try {
+    const pending = await getPendingReports();
+    if (pending && pending.length > 0) {
+      const pendingAsReports: CitizenReport[] = pending.map(p => ({
+        id: p.clientReportId,
+        reporterType: p.payload.reporterType || 'CITIZEN',
+        category: p.payload.category || 'OTHER',
+        description: `[Pending Cloud Sync] ${p.payload.description || ''}`,
+        status: 'PENDING',
+        createdAt: new Date(p.timestamp).toISOString(),
+        syncedAt: null,
+        geoLat: p.payload.geoLat,
+        geoLng: p.payload.geoLng,
+        photoUrl: p.payload.photoUrl || null
+      }));
+      return [...pendingAsReports, ...baseReports];
+    }
+  } catch {}
+
+  return baseReports;
 };
 
 export const submitReport = async (payload: CreateReportPayload): Promise<CitizenReport> => {
@@ -211,8 +280,42 @@ export const submitReport = async (payload: CreateReportPayload): Promise<Citize
     description: finalDesc,
   };
 
-  const res = await api.post<CitizenReport>('/api/reports', backendPayload);
-  return res.data;
+  // If offline or offline simulated, save directly to local IndexedDB
+  if (!navigator.onLine || isOfflineSimulated()) {
+    const queued = await queueReport(backendPayload);
+    return {
+      id: queued.clientReportId,
+      reporterType: backendPayload.reporterType || 'CITIZEN',
+      category: backendPayload.category,
+      description: backendPayload.description,
+      status: 'PENDING',
+      createdAt: new Date().toISOString(),
+      syncedAt: null,
+      geoLat,
+      geoLng,
+      photoUrl: backendPayload.photoUrl || null,
+    };
+  }
+
+  try {
+    const res = await api.post<CitizenReport>('/api/reports', backendPayload);
+    return res.data;
+  } catch {
+    // Network failed during send — preserve safely in offline queue
+    const queued = await queueReport(backendPayload);
+    return {
+      id: queued.clientReportId,
+      reporterType: backendPayload.reporterType || 'CITIZEN',
+      category: backendPayload.category,
+      description: backendPayload.description,
+      status: 'PENDING',
+      createdAt: new Date().toISOString(),
+      syncedAt: null,
+      geoLat,
+      geoLng,
+      photoUrl: backendPayload.photoUrl || null,
+    };
+  }
 };
 
 export const deleteCitizenReport = async (reportId: string): Promise<void> => {
@@ -238,7 +341,7 @@ export const uploadPhoto = async (file: File | Blob, filename = 'hazard.jpg'): P
 export const login = async (username: string, password: string): Promise<{
   token: string; role: string; district: string | null; languagePref: string; username: string;
 }> => {
-  if (!isBackendAvailableOrConfigured()) {
+  if (!isBackendAvailableOrConfigured() || !navigator.onLine || isOfflineSimulated()) {
     const user = MOCK_USERS[username];
     if (user && password === 'demo1234') {
       setDemoMode(true);
@@ -264,7 +367,6 @@ export const login = async (username: string, password: string): Promise<{
 };
 
 export const updateRoadStatus = async (regionId: string, status: RoadStatus): Promise<void> => {
-  // Send both param and body for robust backend compatibility
   await api.patch(`/api/regions/${regionId}/road-status`, { status }, { params: { status } });
 };
 
@@ -284,7 +386,8 @@ export const fetchRiskAssessment = async (
   slope: number = 38.5,
   regionName: string = 'Meppadi, Wayanad (Testbed)'
 ): Promise<RiskAssessmentResponse> => {
-  if (isBackendAvailableOrConfigured()) {
+  const offline = !navigator.onLine || isOfflineSimulated();
+  if (!offline && isBackendAvailableOrConfigured()) {
     try {
       const res = await api.get<RiskAssessmentResponse>('/api/v1/risk-assessment', {
         params: { lat, lon, slope, regionName }
