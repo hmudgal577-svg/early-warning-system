@@ -10,7 +10,6 @@ import { ShelterResourcePanel } from '../components/panels/ShelterResourcePanel'
 import { OfflineSosMesh } from '../components/panels/OfflineSosMesh';
 import { OfflineStatusHeader } from '../components/layout/OfflineStatusHeader';
 import { OfflineRescueMode } from '../components/emergency/OfflineRescueMode';
-import { CitizenEmergencyBar } from '../components/emergency/CitizenEmergencyBar';
 import { OfflineVectorMap } from '../components/map/OfflineVectorMap';
 import { calculateHaversineDistanceKm, calculateCompassBearing } from '../utils/geoUtils';
 import { getCachedHeatmapWithMeta, getCachedIncidents } from '../services/offlineStore';
@@ -590,17 +589,6 @@ export const CitizenPortal: React.FC = () => {
           <h1 style={{ fontSize: '1.8rem', fontWeight: 800, margin: '0 0 6px 0', letterSpacing: '-0.03em', color: fg }}>{t.title}</h1>
           <p style={{ color: theme === 'dark' ? '#94a3b8' : '#475569', fontSize: '0.92rem', margin: 0 }}>{t.subtitle}</p>
         </div>
-
-        {/* ── 1-Tap Offline Emergency Action Bar ── */}
-        <CitizenEmergencyBar
-          defaultLat={userLocation?.lat || selectedZone.lat}
-          defaultLng={userLocation?.lon || selectedZone.lon}
-          onOpenOfflineMap={() => setShowOfflineMap(true)}
-          onFindNearestShelter={() => {
-            setHighlightShelters(true);
-            setActiveTab('shelters');
-          }}
-        />
 
         {/* ── Complete Citizen Offline Rescue Mode (6 Interactive Workflows & Beacon) ── */}
         <OfflineRescueMode
