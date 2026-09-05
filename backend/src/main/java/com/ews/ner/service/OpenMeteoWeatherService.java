@@ -35,12 +35,22 @@ public class OpenMeteoWeatherService {
         // 1. Try Open-Meteo first for high-resolution precipitation + soil moisture
         try {
             String openMeteoUrl = String.format(
+                    java.util.Locale.US,
                     "%s?latitude=%.4f&longitude=%.4f&hourly=precipitation,soil_moisture_0_to_1cm,soil_moisture_1_to_3cm&past_days=3&forecast_days=1&timezone=Asia/Kolkata",
                     OPEN_METEO_BASE_URL, lat, lon
             );
 
             log.info("Fetching live hydrometeorological telemetry from Open-Meteo: {}", openMeteoUrl);
-            String responseStr = restTemplate.getForObject(openMeteoUrl, String.class);
+            
+            org.springframework.http.HttpHeaders headers = new org.springframework.http.HttpHeaders();
+            headers.set("User-Agent", "Mozilla/5.0 (Windows NT 10.0; Win64; x64) SATARK-EWS/1.0");
+            headers.set("Accept", "application/json");
+            org.springframework.http.HttpEntity<String> entity = new org.springframework.http.HttpEntity<>(headers);
+
+            org.springframework.http.ResponseEntity<String> response = restTemplate.exchange(
+                    openMeteoUrl, org.springframework.http.HttpMethod.GET, entity, String.class
+            );
+            String responseStr = response.getBody();
             if (responseStr != null) {
                 JsonNode root = objectMapper.readTree(responseStr);
                 JsonNode hourly = root.path("hourly");

@@ -31,6 +31,9 @@ public class RiskService {
     private final ObjectMapper objectMapper;
     private final com.ews.ner.domain.report.CitizenReportRepository reportRepo;
     private final com.ews.ner.domain.sensor.SensorReadingRepository sensorRepo;
+    @org.springframework.context.annotation.Lazy
+    @org.springframework.beans.factory.annotation.Autowired(required = false)
+    private com.ews.ner.api.RiskSseController sseController;
 
     @Transactional
     public RiskScore computeAndSave(UUID regionId) {
@@ -130,7 +133,7 @@ public class RiskService {
         }).filter(java.util.Objects::nonNull).collect(Collectors.toList());
     }
 
-    @Scheduled(cron = "0 */30 * * * *")
+    @Scheduled(cron = "0 */5 * * * *")
     @Transactional
     public void recomputeAll() {
         log.info("Starting batch recomputation of risk scores for all regions");
@@ -142,5 +145,13 @@ public class RiskService {
                 log.error("Failed to recompute risk for region {}", r.getId(), e);
             }
         });
+        // Push fresh data to all SSE subscribers immediately after recomputation
+        try {
+            if (sseController != null) {
+                sseController.pushHeatmapToAll(getHeatmap());
+            }
+        } catch (Exception e) {
+            log.warn("SSE push after recompute failed: {}", e.getMessage());
+        }
     }
 }

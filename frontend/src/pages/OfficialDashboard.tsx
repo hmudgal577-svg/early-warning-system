@@ -32,7 +32,8 @@ const OfficialDashboard = () => {
         .then(data => { setHeatmapData(data); setLastUpdated(new Date()); setLoading(false); })
         .catch(() => setLoading(false));
     load();
-    const iv = setInterval(load, 60000);
+    // Poll every 15s as fallback when SSE is not active
+    const iv = setInterval(load, 15000);
     return () => clearInterval(iv);
   }, []);
 

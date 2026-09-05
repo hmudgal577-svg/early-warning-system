@@ -66,9 +66,9 @@ export const resolveApiBaseUrl = (): string => {
     if (host === 'localhost' || host === '127.0.0.1') {
       return 'http://localhost:8080';
     }
+    return 'https://ews-backend-gateway-vck8.onrender.com';
   }
-  // In production (Vercel), default to relative API root unless an external backend is specified
-  return '';
+  return 'https://ews-backend-gateway-vck8.onrender.com';
 };
 
 export const isBackendAvailableOrConfigured = (): boolean => {

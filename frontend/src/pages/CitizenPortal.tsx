@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { fetchRiskAssessment } from '../services/api';
 import { sendRiskAlert } from '../services/notificationService';
@@ -143,40 +143,67 @@ export const CitizenPortal: React.FC = () => {
     checkNearbyHazards();
   }, [userLocation, selectedZone]);
 
+  const [lastRefreshed, setLastRefreshed] = useState<Date>(new Date());
+  const [secondsAgo, setSecondsAgo] = useState<number>(0);
+  const [refreshing, setRefreshing] = useState<boolean>(false);
+
+  const loadRiskData = useCallback(async (showSpinner = false) => {
+    if (showSpinner) setRefreshing(true);
+    try {
+      const res = await fetchRiskAssessment(selectedZone.lat, selectedZone.lon, selectedZone.slope, selectedZone.name);
+      setData(res);
+      setLastRefreshed(new Date());
+      setSecondsAgo(0);
+      const level = res.assessment.level;
+      const alertKey = `${selectedZone.name}-${level}`;
+
+      // Trigger sound on RED or AMBER
+      if (level === 'RED' && lastAlertLevel.current !== 'RED') {
+        playCriticalSiren();
+        speakAlert(selectedZone.name, 'RED', res.assessment.action_protocol);
+      } else if (level === 'AMBER' && lastAlertLevel.current !== 'AMBER') {
+        playWarningBeep();
+      } else if (level === 'GREEN') {
+        stopSiren();
+      }
+      lastAlertLevel.current = level;
+
+      // Send push notification
+      if (!notificationSent.current.has(alertKey) && notification === 'granted') {
+        await sendRiskAlert({
+          zone: selectedZone.name,
+          level,
+          score: res.assessment.score,
+          action: res.assessment.action_protocol,
+          rain24h: res.weather.rain_24h_mm,
+        });
+        notificationSent.current.add(alertKey);
+      }
+    } catch (e) {
+      console.error('Real-time risk refresh failed:', e);
+    } finally {
+      setLoading(false);
+      setRefreshing(false);
+    }
+  }, [selectedZone, notification, playCriticalSiren, playWarningBeep, stopSiren, speakAlert]);
+
   useEffect(() => {
     setLoading(true);
-    fetchRiskAssessment(selectedZone.lat, selectedZone.lon, selectedZone.slope, selectedZone.name)
-      .then(async (res) => {
-        setData(res);
-        setLoading(false);
-        const level = res.assessment.level;
-        const alertKey = `${selectedZone.name}-${level}`;
+    loadRiskData(true);
+    // Real-time polling every 12s so telemetry & risk change dynamically
+    const timer = setInterval(() => {
+      loadRiskData(false);
+    }, 12000);
+    return () => clearInterval(timer);
+  }, [loadRiskData]);
 
-        // Trigger sound on RED or AMBER
-        if (level === 'RED' && lastAlertLevel.current !== 'RED') {
-          playCriticalSiren();
-          speakAlert(selectedZone.name, 'RED', res.assessment.action_protocol);
-        } else if (level === 'AMBER' && lastAlertLevel.current !== 'AMBER') {
-          playWarningBeep();
-        } else if (level === 'GREEN') {
-          stopSiren();
-        }
-        lastAlertLevel.current = level;
-
-        // Send push notification
-        if (!notificationSent.current.has(alertKey) && notification === 'granted') {
-          await sendRiskAlert({
-            zone: selectedZone.name,
-            level,
-            score: res.assessment.score,
-            action: res.assessment.action_protocol,
-            rain24h: res.weather.rain_24h_mm,
-          });
-          notificationSent.current.add(alertKey);
-        }
-      })
-      .catch(() => setLoading(false));
-  }, [selectedZone]);
+  // Tick seconds counter every second for real-time visual indicator
+  useEffect(() => {
+    const secTimer = setInterval(() => {
+      setSecondsAgo(s => s + 1);
+    }, 1000);
+    return () => clearInterval(secTimer);
+  }, []);
 
   const t = {
     en: {
@@ -630,6 +657,49 @@ export const CitizenPortal: React.FC = () => {
               </div>
             </div>
 
+            {/* Live Telemetry Stream Bar */}
+            <div style={{
+              display: 'flex', alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap', gap: '10px',
+              background: theme === 'dark' ? 'rgba(15, 23, 42, 0.7)' : 'rgba(241, 245, 249, 0.9)',
+              border: `1px solid ${brd}`, borderRadius: '10px', padding: '10px 16px', marginBottom: '16px'
+            }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: '10px', fontSize: '0.82rem' }}>
+                <span style={{
+                  width: '9px', height: '9px', borderRadius: '50%',
+                  background: '#22c55e',
+                  boxShadow: '0 0 8px #22c55e',
+                  animation: 'pulse 1.5s infinite',
+                  display: 'inline-block'
+                }} />
+                <span style={{ fontWeight: 800, color: theme === 'dark' ? '#4ade80' : '#15803d', letterSpacing: '0.04em' }}>
+                  REAL-TIME TELEMETRY STREAM
+                </span>
+                <span style={{ color: muted }}>•</span>
+                <span style={{ color: muted }}>
+                  {secondsAgo === 0 ? 'Updated just now' : `Updated ${secondsAgo}s ago`}
+                </span>
+                <span style={{ color: muted }}>•</span>
+                <span style={{ color: theme === 'dark' ? '#38bdf8' : '#0284c7', fontWeight: 600 }}>
+                  Source: {data?.weather?.source || 'Open-Meteo & OpenWeather'}
+                </span>
+              </div>
+              <button
+                onClick={() => loadRiskData(true)}
+                disabled={refreshing}
+                style={{
+                  display: 'inline-flex', alignItems: 'center', gap: '6px',
+                  background: theme === 'dark' ? '#1e293b' : '#ffffff',
+                  border: `1px solid ${brd}`, borderRadius: '6px',
+                  padding: '6px 12px', fontSize: '0.78rem', fontWeight: 700,
+                  color: fg, cursor: refreshing ? 'not-allowed' : 'pointer',
+                  boxShadow: '0 1px 3px rgba(0,0,0,0.1)'
+                }}
+              >
+                <span style={{ display: 'inline-block', transform: refreshing ? 'rotate(360deg)' : 'none', transition: 'transform 0.5s' }}>🔄</span>
+                {refreshing ? 'Updating…' : 'Refresh Live Data'}
+              </button>
+            </div>
+
             {/* AI Risk Banner */}
             <div style={{
               background: isRed ? (theme === 'dark' ? 'linear-gradient(135deg,rgba(239,68,68,0.25),rgba(185,28,28,0.15))' : 'linear-gradient(135deg,#fee2e2,#fecaca)') :
@@ -672,10 +742,10 @@ export const CitizenPortal: React.FC = () => {
             {/* Telemetry Grid */}
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(200px, 1fr))', gap: '14px', marginBottom: '24px' }}>
               {[
-                { icon: '🌧️', label: t.rain24, value: `${data?.weather?.rain_24h_mm ?? 142.0} mm`, sub: 'Open-Meteo & OpenWeather', color: (data?.weather?.rain_24h_mm ?? 0) > 100 ? (theme === 'dark' ? '#ef4444' : '#dc2626') : (theme === 'dark' ? '#38bdf8' : '#0284c7') },
-                { icon: '📊', label: t.rain72, value: `${data?.weather?.rain_72h_mm ?? 285.0} mm`, sub: '3-Day Antecedent Rain', color: theme === 'dark' ? '#f8fafc' : '#0f172a' },
-                { icon: '🌱', label: t.soil, value: `${data?.weather?.soil_moisture ?? 0.52} m³/m³`, sub: 'Topsoil 0-1cm Layer', color: theme === 'dark' ? '#f8fafc' : '#0f172a' },
-                { icon: '🛰️', label: t.elevation, value: '876.5 m', sub: 'NASA SRTM 30m DEM', color: theme === 'dark' ? '#38bdf8' : '#0284c7' },
+                { icon: '🌧️', label: t.rain24, value: `${(data?.weather?.rain_24h_mm ?? 142.0).toFixed(1)} mm`, sub: data?.weather?.source ? `Source: ${data.weather.source}` : 'Open-Meteo & OpenWeather', color: (data?.weather?.rain_24h_mm ?? 0) > 100 ? (theme === 'dark' ? '#ef4444' : '#dc2626') : (theme === 'dark' ? '#38bdf8' : '#0284c7') },
+                { icon: '📊', label: t.rain72, value: `${(data?.weather?.rain_72h_mm ?? 285.0).toFixed(1)} mm`, sub: '3-Day Antecedent Rain', color: theme === 'dark' ? '#f8fafc' : '#0f172a' },
+                { icon: '🌱', label: t.soil, value: `${((data?.weather?.soil_moisture ?? 0.52) * 100).toFixed(0)}% (${(data?.weather?.soil_moisture ?? 0.52).toFixed(2)} m³/m³)`, sub: 'Topsoil 0-1cm Layer', color: theme === 'dark' ? '#f8fafc' : '#0f172a' },
+                { icon: '🛰️', label: t.elevation, value: `${((data as any)?.terrain_elevation?.elevation_meters ?? 876.5).toFixed(1)} m`, sub: 'NASA SRTM 30m DEM', color: theme === 'dark' ? '#38bdf8' : '#0284c7' },
               ].map(({ icon, label, value, sub, color }) => (
                 <div key={label} style={{ background: card, border: `1px solid ${brd}`, borderRadius: '12px', padding: '16px' }}>
                   <div style={{ fontSize: '0.75rem', color: theme === 'dark' ? '#94a3b8' : '#475569', fontWeight: 600 }}>{icon} {label}</div>
