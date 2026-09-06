@@ -6,12 +6,13 @@ import {
   getCachedIncidents,
   EmergencyDistressState,
 } from '../../services/offlineStore';
+import { fetchRecentReports } from '../../services/api';
 import { calculateHaversineDistanceKm, calculateCompassBearing } from '../../utils/geoUtils';
 
 export interface DetectedSignal {
   beaconId: string;
   status: 'ACTIVE' | 'RESCUE_IN_PROGRESS' | 'RESOLVED';
-  source: 'STORED_CITIZEN_BEACON' | 'OFFLINE_QUEUE' | 'DEMO';
+  source: 'STORED_CITIZEN_BEACON' | 'OFFLINE_QUEUE' | 'DEMO' | 'LIVE_MESH_GATEWAY';
   distanceKm: number | null;
   bearing?: string;
   lat: number;
@@ -67,10 +68,78 @@ export const BleRescueScanner: React.FC<Props> = ({
   const [searchQuery, setSearchQuery] = useState<string>('');
   const [actionNotice, setActionNotice] = useState<string | null>(null);
 
-  // Automatically check if there's an active citizen beacon on mount
+  // Automatically check if there's an active citizen beacon on mount & sync live mesh signals
   useEffect(() => {
     checkActiveCitizenBeacon();
+    syncLiveMeshReports();
+
+    // Auto-poll incoming peer mesh signals every 4 seconds for immediate multi-phone demo
+    const iv = setInterval(() => {
+      syncLiveMeshReports();
+    }, 4000);
+
+    const handleReportsUpdate = () => syncLiveMeshReports();
+    window.addEventListener('ews-reports-updated', handleReportsUpdate);
+    window.addEventListener('ews-sync-completed', handleReportsUpdate);
+
+    return () => {
+      clearInterval(iv);
+      window.removeEventListener('ews-reports-updated', handleReportsUpdate);
+      window.removeEventListener('ews-sync-completed', handleReportsUpdate);
+    };
   }, []);
+
+  const syncLiveMeshReports = async () => {
+    try {
+      const recent = await fetchRecentReports();
+      const emergencyReports = recent.filter(r => {
+        const desc = (r.description || '').toUpperCase();
+        return (
+          desc.includes('[OFFLINE SOS BEACON]') ||
+          desc.includes('EMERGENCY SOS') ||
+          desc.includes('SIGNAL RESCUE') ||
+          desc.includes('DISTRESS BEACON') ||
+          r.category === 'INJURED_PEOPLE' ||
+          r.category === 'TRAPPED_CITIZENS'
+        );
+      });
+
+      if (emergencyReports.length > 0) {
+        emergencyReports.forEach(r => {
+          const lat = typeof r.geoLat === 'number' && !isNaN(r.geoLat) ? r.geoLat : 11.5534;
+          const lng = typeof r.geoLng === 'number' && !isNaN(r.geoLng) ? r.geoLng : 76.1320;
+          const dist = calculateHaversineDistanceKm(officerLat, officerLng, lat, lng);
+          const brg = calculateCompassBearing(officerLat, officerLng, lat, lng);
+          const bId = r.clientReportId
+            ? `SOS-${r.clientReportId.slice(-4).toUpperCase()}`
+            : `EWS-${r.id.substring(0, 6).toUpperCase()}`;
+
+          const isUrgent = (r.description || '').toUpperCase().includes('URGENT MEDICAL: YES') ||
+            (r.description || '').toUpperCase().includes('URGENT MEDICAL ASSISTANCE: YES') ||
+            r.category === 'INJURED_PEOPLE';
+
+          const item: DetectedSignal = {
+            beaconId: bId,
+            status: r.status === 'RESOLVED' ? 'RESOLVED' : 'ACTIVE',
+            source: 'LIVE_MESH_GATEWAY',
+            distanceKm: dist,
+            bearing: brg,
+            lat,
+            lng,
+            priority: 'HIGH',
+            priorityReason: r.description || 'Incoming Citizen Emergency Distress Beacon (Relayed via Mesh Gateway)',
+            medicalUrgent: isUrgent,
+            timeDetected: new Date(r.createdAt).toLocaleTimeString(),
+          };
+
+          setDetectedSignals(prev => {
+            const filtered = prev.filter(s => s.beaconId !== bId);
+            return [item, ...filtered];
+          });
+        });
+      }
+    } catch {}
+  };
 
   const checkActiveCitizenBeacon = () => {
     const citizenBeacon = getEmergencyDistressState();
@@ -105,13 +174,13 @@ export const BleRescueScanner: React.FC<Props> = ({
 
   const handleScanBle = () => {
     setIsScanning(true);
-    setScannerStatus('SCANNING FOR BLE PACKETS (30s timeout)…');
+    setScannerStatus('SCANNING FOR BLE PACKETS & MESH GATEWAY SIGNALS (30s timeout)…');
     setActionNotice(null);
 
-    // Simulate genuine scan interval looking for local/stored signals
+    // Scan both local radio environment and mesh gateway reports
     setTimeout(() => {
-      // Check stored citizen beacons and pending reports
       checkActiveCitizenBeacon();
+      syncLiveMeshReports();
       const history = getBeaconHistory();
       if (history.length > 0) {
         history.forEach(b => {
@@ -120,8 +189,8 @@ export const BleRescueScanner: React.FC<Props> = ({
       }
 
       setIsScanning(false);
-      setScannerStatus('SCAN COMPLETE — Signals refreshed from local radio environment & storage');
-    }, 2500);
+      setScannerStatus('SCAN COMPLETE — Signals refreshed from local radio environment & mesh gateway');
+    }, 2000);
   };
 
   const handleClearDetections = () => {

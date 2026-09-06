@@ -55,6 +55,7 @@ export interface CitizenReport {
   syncedAt: string | null;
   geoLat: number;
   geoLng: number;
+  clientReportId?: string;
 }
 
 export interface AlertItem {
